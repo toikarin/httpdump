@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	IPV4_FRAME_HEADER_LEN = 20
+	IPV4_FRAME_HEADER_LENGTH = 20
 )
 
 type IPv4FrameHeader struct {
@@ -15,8 +15,8 @@ type IPv4FrameHeader struct {
 }
 
 func NewIPv4FrameHeader(data []byte) (*IPv4FrameHeader, error) {
-	if len(data) < IPV4_FRAME_HEADER_LEN {
-		return nil, errors.New(fmt.Sprintf("required at least %d bytes of data.", IPV4_FRAME_HEADER_LEN))
+	if len(data) < IPV4_FRAME_HEADER_LENGTH {
+		return nil, errors.New(fmt.Sprintf("required at least %d bytes of data.", IPV4_FRAME_HEADER_LENGTH))
 	}
 
 	return &IPv4FrameHeader{data}, nil

@@ -41,127 +41,118 @@ func readStream(r io.Reader) {
 
 func readPacket(r io.Reader, bo binary.ByteOrder) error {
 	//
-	// 1. Read pcap packet header
+	// Read pcap packet header
 	//
 	pcapPacketHeader, err := readPcapPacketHeader(r, bo)
 	if err != nil {
 		return err
 	}
 
-	if pcapPacketHeader != nil {
-	}
-	fmt.Println(pcapPacketHeader)
-
-	pcapPacketDataLeft := pcapPacketHeader.IncludeLength()
+	if pcapPacketHeader != nil {}
 
 	//
-	// 2. Read ethernet frame header
+	// Read rest of the packet
 	//
-	ethernetFrameHeader, err := readEthernetFrameHeader(r)
+	packetData, err := readPacketData(r, pcapPacketHeader.IncludeLength())
 	if err != nil {
 		return err
 	}
 
-	if ethernetFrameHeader != nil {
-	}
-	fmt.Println(ethernetFrameHeader)
+	return readEthernetPacket(packetData)
+}
 
-	pcapPacketDataLeft -= ETHERNET_FRAME_HEADER_LENGTH
+type NetworkLayerFrame interface {
+	Version() uint8
+	Protocol() uint8
+	HeaderLength() uint8
+	TotalLength() uint16
+}
 
+func readNetworkLayer(data []byte, layerType uint16) (NetworkLayerFrame, error) {
+	switch layerType {
 	// only handle ipv4
-	if ethernetFrameHeader.Type() != ETHERTYPE_IPV4 {
-		fmt.Println("Unknown ethernet packet type:", ethernetFrameHeader.Type())
+	case ETHERTYPE_IPV4:
+		return NewIPv4FrameHeader(data)
+	case ETHERTYPE_IPV6:
+		return NewIPv6FrameHeader(data)
+	default:
+		return nil, nil
+	}
+}
 
-		_, err := readPacketData(r, pcapPacketDataLeft)
-		if err != nil {
-			return err
+func readEthernetPacket(packetData []byte) error {
+	//
+	// 1. Read ethernet frame header
+	//
+	ethernetFrameHeader, err := NewEthernetFrameHeader(packetData)
+	if err != nil {
+		return err
+	}
+
+	packetData = packetData[ETHERNET_FRAME_HEADER_LENGTH:]
+
+	//
+	// 2. Read network layer frame header
+	//
+	ipFrameHeader, err := readNetworkLayer(packetData, ethernetFrameHeader.Type())
+	if err != nil { return err }
+	if ipFrameHeader == nil { return nil }
+
+	packetData = packetData[ipFrameHeader.HeaderLength():]
+
+	if ipFrameHeader.Protocol() != PROTOCOL_TCP {
+		switch ipFrameHeader.Protocol() {
+		case PROTOCOL_UDP:
+			fmt.Println("udp frame skipped")
+		case PROTOCOL_ICMP:
+			fmt.Println("icmp frame skipped")
+		default:
+			fmt.Println("unknown frame skipped")
 		}
 
 		return nil
 	}
 
 	//
-	// 3. Read IPv4 frame header
+	// 3. Read TCP frame header
 	//
-	ipv4FrameHeader, err := readIPv4FrameHeader(r)
-	fmt.Println(ipv4FrameHeader)
+	tcpFrameHeader, err := NewTcpFrameHeader(packetData)
 	if err != nil {
 		return err
 	}
 
-	pcapPacketDataLeft -= IPV4_FRAME_HEADER_LEN
-
-	if ipv4FrameHeader.Protocol() != PROTOCOL_TCP {
-		fmt.Println("invalid protocol:", ipv4FrameHeader.Protocol())
-
-		_, err := readPacketData(r, pcapPacketDataLeft)
-		if err != nil {
-			return err
-		}
-
-		return nil
-	}
-
-	//
-	// 4. Read TCP frame header
-	//
-	tcpFrameHeader, err := readTcpFrameHeader(r)
-	fmt.Println(tcpFrameHeader)
-	if err != nil {
-		return err
-	}
+	packetData = packetData[TCP_FRAME_HEADER_LENGTH:]
 
 	// Read TCP options
-	err = readTcpOptions(r, tcpFrameHeader.OptionsLength())
-	if err != nil {
-		return err
+	tcpOptsLen := tcpFrameHeader.OptionsLength()
+	if tcpOptsLen > 0 {
+		packetData = packetData[tcpOptsLen:]
 	}
 
-	pcapPacketDataLeft -= TCP_FRAME_HEADER_LENGTH + uint32(tcpFrameHeader.OptionsLength())
-
 	//
-	// 5. Read TCP payload
+	// 4. Read TCP payload
 	//
-	payloadLen := uint32(ipv4FrameHeader.TotalLength()-uint16(ipv4FrameHeader.HeaderLength())) - uint32(tcpFrameHeader.DataOffset())
+	payloadLen := uint32(ipFrameHeader.TotalLength()-uint16(ipFrameHeader.HeaderLength())) - uint32(tcpFrameHeader.DataOffset())
 
 	if payloadLen > 0 {
-		data, err := readPacketData(r, uint32(payloadLen))
-		if err != nil {
-			return err
-		}
-
-		pcapPacketDataLeft -= payloadLen
+		payload := packetData[:payloadLen]
 
 		// GET
-		if isHttpReq(data) {
-			fmt.Print(green("> " + string(data)))
-		}
-		// HTTP/1.0 or HTTP/1.1
-		/*} else if data[0] == 72 && data[1] == 84 && data[2] == 84 && data[3] == 80 && data[4] == 47 && data[5] == 49 && data[6] == 46 && (data[7] == 48 || data[7] == 49) {
-			fmt.Print(red("< " + string(data)))
-		} else {
-			fmt.Println("Unknown data of length", dataLeft)
-		}
-		*/
-	}
-
-	//
-	// 6. Read (optional) padding data
-	//
-	if pcapPacketDataLeft > 0 {
-		_, err := readPacketData(r, pcapPacketDataLeft)
-		if err != nil {
-			return err
+		if isHttpReq(payload) {
+			fmt.Print(green("> " + string(payload)))
 		}
 	}
 
-	if false {
-		fmt.Println(pcapPacketHeader)
+	if true {
 		fmt.Println(ethernetFrameHeader)
-		fmt.Println(ipv4FrameHeader)
+		fmt.Println(ipFrameHeader)
 		fmt.Println(tcpFrameHeader)
 		fmt.Println("Payload length:", payloadLen)
 		fmt.Println("-----------------------")
+	}
+
+	if true {
+		fmt.Printf("IPv%d, TCP %s, payload len: %d\n", ipFrameHeader.Version(), flagString(*tcpFrameHeader), payloadLen)
 	}
 
 	return nil

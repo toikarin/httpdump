@@ -44,6 +44,56 @@ func IPv4String(a uint32) string {
 	return fmt.Sprintf("%d.%d.%d.%d", a>>24, (a&0xFF0000)>>16, (a&0xFF00)>>8, (a & 0xFF))
 }
 
+func IPv6String(a []uint16) string {
+	longest, longestIdx := -1, -1
+	curStreak, curIdx := -1, -1
+
+	// find longest streak of zeros to convert
+	for i, part := range a {
+		if part == 0 {
+			// do we start a new streak?
+			if curStreak == -1 {
+				curIdx = i
+				curStreak = 1
+			} else {
+				// streak continues
+				curStreak += 1
+
+				if curStreak > longest {
+					longest = curStreak
+					longestIdx = curIdx
+				}
+			}
+		} else {
+			curStreak, curIdx = -1, -1
+		}
+	}
+
+	s := ""
+
+	for i := 0; i < 8; {
+		if i == longestIdx {
+			s += ":"
+			i += longest
+
+			// add last colon
+			if i == 8 {
+				s += ":"
+			}
+		} else {
+			if i != 0 {
+				s += ":"
+			}
+
+			s += fmt.Sprintf("%x", a[i])
+
+			i += 1
+		}
+	}
+
+	return s
+}
+
 func protocol(p uint8) string {
 	switch p {
 	case PROTOCOL_TCP:
@@ -73,6 +123,20 @@ func (p IPv4FrameHeader) String() string {
   Destination Address: %s
 ]`, p.Version(), p.HeaderLength(), p.DSCP(), p.ECN(), p.TotalLength(), p.Identification(), binarystr(int64(p.Flags())), p.DontFragment(), p.MoreFragments(),
 		p.FragmentOffset(), p.TimeToLive(), p.Protocol(), protocol(p.Protocol()), IPv4String(p.SourceAddress()), IPv4String(p.DestinationAddress()))
+}
+
+func (p IPv6FrameHeader) String() string {
+	return fmt.Sprintf(`[IPv6FrameHeader:
+  Version:             %d
+  TrafficClass:        %d
+  FlowControl:         %d
+  Payload Length:      %d
+  NextHeader:          %d
+  Hop Limit:           %d
+  Source Address:      %s
+  Destination Address: %s
+]`, p.Version(), p.TrafficClass(), p.FlowControl(), p.PayloadLength(), p.NextHeader(), p.HopLimit(),
+		IPv6String(p.SourceAddress()), IPv6String(p.DestinationAddress()))
 }
 
 func flagString(h TcpFrameHeader) string {
