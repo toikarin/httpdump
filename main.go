@@ -25,6 +25,9 @@ func main() {
 func readStream(r io.Reader) {
 	pcapFileHeader, err := readPcapFileHeader(r)
 	if err != nil {
+		if err == io.EOF {
+			return
+		}
 		panic(err)
 	}
 
@@ -48,8 +51,6 @@ func readPacket(r io.Reader, bo binary.ByteOrder) error {
 		return err
 	}
 
-	if pcapPacketHeader != nil {}
-
 	//
 	// Read rest of the packet
 	//
@@ -70,7 +71,6 @@ type NetworkLayerFrame interface {
 
 func readNetworkLayer(data []byte, layerType uint16) (NetworkLayerFrame, error) {
 	switch layerType {
-	// only handle ipv4
 	case ETHERTYPE_IPV4:
 		return NewIPv4FrameHeader(data)
 	case ETHERTYPE_IPV6:
@@ -82,7 +82,7 @@ func readNetworkLayer(data []byte, layerType uint16) (NetworkLayerFrame, error) 
 
 func readEthernetPacket(packetData []byte) error {
 	//
-	// 1. Read ethernet frame header
+	// Read ethernet frame header
 	//
 	ethernetFrameHeader, err := NewEthernetFrameHeader(packetData)
 	if err != nil {
@@ -92,29 +92,71 @@ func readEthernetPacket(packetData []byte) error {
 	packetData = packetData[ETHERNET_FRAME_HEADER_LENGTH:]
 
 	//
-	// 2. Read network layer frame header
+	// Read network layer frame header
 	//
 	ipFrameHeader, err := readNetworkLayer(packetData, ethernetFrameHeader.Type())
-	if err != nil { return err }
-	if ipFrameHeader == nil { return nil }
-
-	packetData = packetData[ipFrameHeader.HeaderLength():]
-
-	if ipFrameHeader.Protocol() != PROTOCOL_TCP {
-		switch ipFrameHeader.Protocol() {
-		case PROTOCOL_UDP:
-			fmt.Println("udp frame skipped")
-		case PROTOCOL_ICMP:
-			fmt.Println("icmp frame skipped")
-		default:
-			fmt.Println("unknown frame skipped")
-		}
-
+	if err != nil {
+		return err
+	}
+	if ipFrameHeader == nil {
 		return nil
 	}
 
+	packetData = packetData[ipFrameHeader.HeaderLength():]
+
+	switch ipFrameHeader.Protocol() {
+	case PROTOCOL_TCP:
+		return handleTCP(packetData, ipFrameHeader)
+	case PROTOCOL_UDP:
+		return handleUDP(packetData, ipFrameHeader)
+	case PROTOCOL_ICMP:
+		return handleICMP(packetData, ipFrameHeader)
+	default:
+		fmt.Println("unknown frame skipped")
+	}
+
+	return nil
+}
+
+func handleUDP(packetData []byte, ipFrameHeader NetworkLayerFrame) error {
+	udpFrameHeader, err := NewUDPFrameHeader(packetData)
+	if err != nil {
+		return err
+	}
+
+	packetData = packetData[UDP_FRAME_HEADER_LENGTH:]
+	payloadLen := udpFrameHeader.Length() - UDP_FRAME_HEADER_LENGTH
+
 	//
-	// 3. Read TCP frame header
+	// Log packet
+	//
+	fmt.Printf("%15s:%-5d -> %15s:%-5d: IPv%d, UDP, payload len: %d\n", sourceAddressToString(ipFrameHeader),
+		udpFrameHeader.SourcePort(), destinationAddressToString(ipFrameHeader),
+		udpFrameHeader.DestinationPort(), ipFrameHeader.Version(), payloadLen)
+
+	return nil
+}
+
+func handleICMP(packetData []byte, ipFrameHeader NetworkLayerFrame) error {
+	icmpFrameHeader, err := NewICMPFrameHeader(packetData)
+	if err != nil {
+		return err
+	}
+
+	packetData = packetData[ICMP_FRAME_HEADER_LENGTH:]
+
+	//
+	// Log packet
+	//
+	fmt.Printf("%15s -> %15s: ICMP Type %d\n", sourceAddressToString(ipFrameHeader),
+		destinationAddressToString(ipFrameHeader), icmpFrameHeader.Type())
+
+	return nil
+}
+
+func handleTCP(packetData []byte, ipFrameHeader NetworkLayerFrame) error {
+	//
+	// Read TCP header
 	//
 	tcpFrameHeader, err := NewTcpFrameHeader(packetData)
 	if err != nil {
@@ -123,14 +165,16 @@ func readEthernetPacket(packetData []byte) error {
 
 	packetData = packetData[TCP_FRAME_HEADER_LENGTH:]
 
+	//
 	// Read TCP options
+	//
 	tcpOptsLen := tcpFrameHeader.OptionsLength()
 	if tcpOptsLen > 0 {
 		packetData = packetData[tcpOptsLen:]
 	}
 
 	//
-	// 4. Read TCP payload
+	// Read TCP payload
 	//
 	payloadLen := uint32(ipFrameHeader.TotalLength()-uint16(ipFrameHeader.HeaderLength())) - uint32(tcpFrameHeader.DataOffset())
 
@@ -138,22 +182,18 @@ func readEthernetPacket(packetData []byte) error {
 		payload := packetData[:payloadLen]
 
 		// GET
-		if isHttpReq(payload) {
+		if isHttpReq(payload) && false {
 			fmt.Print(green("> " + string(payload)))
 		}
 	}
 
-	if true {
-		fmt.Println(ethernetFrameHeader)
-		fmt.Println(ipFrameHeader)
-		fmt.Println(tcpFrameHeader)
-		fmt.Println("Payload length:", payloadLen)
-		fmt.Println("-----------------------")
-	}
-
-	if true {
-		fmt.Printf("IPv%d, TCP %s, payload len: %d\n", ipFrameHeader.Version(), flagString(*tcpFrameHeader), payloadLen)
-	}
+	//
+	// Log packet
+	//
+	fmt.Printf("%15s:%-5d -> %15s:%-5d: IPv%d, TCP [%7s], payload len: %d\n",
+		sourceAddressToString(ipFrameHeader), tcpFrameHeader.SourcePort(),
+		destinationAddressToString(ipFrameHeader), tcpFrameHeader.DestinationPort(),
+		ipFrameHeader.Version(), flagString(*tcpFrameHeader), payloadLen)
 
 	return nil
 }
@@ -172,4 +212,26 @@ func blue(s string) string {
 
 func green(s string) string {
 	return "\033[92m" + s + "\033[0m"
+}
+
+func sourceAddressToString(a interface{}) string {
+	switch t := a.(type) {
+	case *IPv4FrameHeader:
+		return IPv4String(a.(*IPv4FrameHeader).SourceAddress())
+	case *IPv6FrameHeader:
+		return IPv6String(a.(*IPv6FrameHeader).SourceAddress())
+	default:
+		panic(fmt.Sprintf("Unknown frame header type: %T", t))
+	}
+}
+
+func destinationAddressToString(a interface{}) string {
+	switch t := a.(type) {
+	case *IPv4FrameHeader:
+		return IPv4String(a.(*IPv4FrameHeader).DestinationAddress())
+	case *IPv6FrameHeader:
+		return IPv6String(a.(*IPv6FrameHeader).DestinationAddress())
+	default:
+		panic(fmt.Sprintf("Unknown frame header type: %T", t))
+	}
 }
