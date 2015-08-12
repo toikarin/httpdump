@@ -541,32 +541,27 @@ func printHttpResponse(httpData *HttpData) {
 		//
 		// Print content
 		//
-		if resp.ContentLength > 0 {
-			//
-			// Read full response
-			//
-			defer resp.Body.Close()
-			buf, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				// FIXME
+		defer resp.Body.Close()
+		buf, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			// FIXME
+		}
+
+		if isTextContentType(resp.Header.Get("Content-Type")) {
+			switch resp.Header.Get("Content-Encoding") {
+			case "":
+				// do nothing
+			case "gzip":
+				buf, err = readGzip(buf)
+				// FIXME: handle err
+			default:
+				// unknown encoding
+				buf = nil
 			}
 
-			if isTextContentType(resp.Header.Get("Content-Type")) {
-				switch resp.Header.Get("Content-Encoding") {
-				case "":
-					// do nothing
-				case "gzip":
-					buf, err = readGzip(buf)
-					// FIXME: handle err
-				default:
-					// unknown encoding
-					buf = nil
-				}
-
-				printPayload(buf, buf != nil)
-			} else {
-				printPayload(nil, false)
-			}
+			printPayload(buf, buf != nil)
+		} else {
+			printPayload(nil, false)
 		}
 	}
 }
