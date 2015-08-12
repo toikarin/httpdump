@@ -18,6 +18,7 @@ import (
 var connmap map[FlowAddress]*Conn
 var wg sync.WaitGroup
 var payloadMaxLength = 1024 * 2
+var printPackets = false
 
 func main() {
 	connmap = make(map[FlowAddress]*Conn)
@@ -152,7 +153,7 @@ func handleUDP(packetData []byte, ipFrameHeader NetworkLayerFrame) error {
 	//
 	// Log packet
 	//
-	if false {
+	if printPackets {
 		fmt.Printf("%15s:%-5d -> %15s:%-5d: IPv%d, UDP, payload len: %d\n", sourceAddressToString(ipFrameHeader),
 			udpFrameHeader.SourcePort(), destinationAddressToString(ipFrameHeader),
 			udpFrameHeader.DestinationPort(), ipFrameHeader.Version(), payloadLen)
@@ -172,7 +173,7 @@ func handleICMP(packetData []byte, ipFrameHeader NetworkLayerFrame) error {
 	//
 	// Log packet
 	//
-	if false {
+	if printPackets {
 		fmt.Printf("%15s -> %15s: ICMP Type %d\n", sourceAddressToString(ipFrameHeader),
 			destinationAddressToString(ipFrameHeader), icmpFrameHeader.Type())
 	}
@@ -409,7 +410,7 @@ func handleTCP(origPacketData []byte, ipFrameHeader NetworkLayerFrame) error {
 	//
 	// Log packet
 	//
-	if true {
+	if printPackets {
 		fmt.Printf("%15s:%-5d -> %15s:%-5d: IPv%d, TCP [%7s], RSN: %d, RAN: %d, payload len: %d\n",
 			sourceAddressToString(ipFrameHeader), tcpFrameHeader.SourcePort(),
 			destinationAddressToString(ipFrameHeader), tcpFrameHeader.DestinationPort(),
