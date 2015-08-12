@@ -38,20 +38,20 @@ func (p IPv6FrameHeader) PayloadLength() uint16 {
 	return binary.BigEndian.Uint16(p.data[4:6])
 }
 
-func (p IPv6FrameHeader) NextHeader() uint8 {
-	return p.data[6]
-}
-
-func (p IPv6FrameHeader) Protocol() uint8 {
-	return p.NextHeader()
-}
-
 func (p IPv6FrameHeader) HeaderLength() uint8 {
 	return IPV6_FRAME_HEADER_LENGTH
 }
 
 func (p IPv6FrameHeader) TotalLength() uint16 {
 	return IPV6_FRAME_HEADER_LENGTH + p.PayloadLength()
+}
+
+func (p IPv6FrameHeader) NextHeader() uint8 {
+	return p.data[6]
+}
+
+func (p IPv6FrameHeader) Protocol() uint8 {
+	return p.NextHeader()
 }
 
 func (p IPv6FrameHeader) HopLimit() uint8 {

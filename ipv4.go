@@ -27,7 +27,7 @@ func (p IPv4FrameHeader) Version() uint8 {
 }
 
 func (p IPv4FrameHeader) HeaderLength() uint8 {
-	return (p.data[0] & 0xf) * 32 / 8
+	return (p.data[0] & 0xf) * 4
 }
 
 func (p IPv4FrameHeader) DSCP() uint8 {
