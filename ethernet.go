@@ -6,6 +6,11 @@ import (
 	"fmt"
 )
 
+type EthernetFrame struct {
+	Header  *EthernetFrameHeader
+	Payload []byte
+}
+
 type EthernetFrameHeader struct {
 	data []byte
 }
@@ -16,12 +21,21 @@ const (
 	ETHERTYPE_IPV6               = 0x86DD
 )
 
+func NewEthernetFrame(data []byte) (*EthernetFrame, error) {
+	header, err := NewEthernetFrameHeader(data)
+	if err != nil {
+		return nil, err
+	}
+
+	return &EthernetFrame{header, data[ETHERNET_FRAME_HEADER_LENGTH:]}, nil
+}
+
 func NewEthernetFrameHeader(data []byte) (*EthernetFrameHeader, error) {
 	if len(data) < ETHERNET_FRAME_HEADER_LENGTH {
 		return nil, errors.New(fmt.Sprintf("required at least %d bytes of data.", ETHERNET_FRAME_HEADER_LENGTH))
 	}
 
-	return &EthernetFrameHeader{data}, nil
+	return &EthernetFrameHeader{data[:ETHERNET_FRAME_HEADER_LENGTH]}, nil
 }
 
 func (h EthernetFrameHeader) Destination() []byte {

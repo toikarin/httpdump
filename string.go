@@ -139,7 +139,7 @@ func (p IPv6FrameHeader) String() string {
 		IPv6String(p.SourceAddress()), IPv6String(p.DestinationAddress()))
 }
 
-func flagString(h TcpFrameHeader) string {
+func flagString(h TCPFrameHeader) string {
 	s := ""
 
 	if h.FlagNS() {
@@ -181,8 +181,8 @@ func appendFlagString(s1, s2 string) string {
 	return s1 + s2
 }
 
-func (p TcpFrameHeader) String() string {
-	return fmt.Sprintf(`[TcpFrameHeader:
+func (p TCPFrameHeader) String() string {
+	return fmt.Sprintf(`[TCPFrameHeader:
   SourcePort:         %d
   DestinationPort:    %d
   Sequence Number:    %d

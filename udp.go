@@ -6,6 +6,11 @@ import (
 	"fmt"
 )
 
+type UDPFrame struct {
+	Header  *UDPFrameHeader
+	Payload []byte
+}
+
 type UDPFrameHeader struct {
 	data []byte
 }
@@ -14,12 +19,25 @@ const (
 	UDP_FRAME_HEADER_LENGTH = 8
 )
 
+func NewUDPFrame(data []byte) (*UDPFrame, error) {
+	header, err := NewUDPFrameHeader(data)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(data) < int(header.Length()) {
+		return nil, errors.New(fmt.Sprintf("required at least %d bytes of data.", header.Length()))
+	}
+
+	return &UDPFrame{header, data[UDP_FRAME_HEADER_LENGTH:header.Length()]}, nil
+}
+
 func NewUDPFrameHeader(data []byte) (*UDPFrameHeader, error) {
 	if len(data) < UDP_FRAME_HEADER_LENGTH {
 		return nil, errors.New(fmt.Sprintf("required at least %d bytes of data.", UDP_FRAME_HEADER_LENGTH))
 	}
 
-	return &UDPFrameHeader{data}, nil
+	return &UDPFrameHeader{data[:UDP_FRAME_HEADER_LENGTH]}, nil
 }
 
 func (h UDPFrameHeader) SourcePort() uint16 {

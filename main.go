@@ -1,24 +1,16 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
-	"compress/gzip"
-	"encoding/binary"
 	"fmt"
 	"io"
-	"io/ioutil"
-	"net/http"
 	"os"
-	"strconv"
-	"strings"
 	"sync"
 )
 
 var connmap map[FlowAddress]*Conn
 var wg sync.WaitGroup
 var payloadMaxLength = 1024 * 2
-var printPackets = false
+var logPackets = true
 
 func main() {
 	connmap = make(map[FlowAddress]*Conn)
@@ -30,10 +22,10 @@ func main() {
 			panic(err)
 		}
 
-		readStream(f)
+		readStream(f, MyPacketListener{})
 	} else {
 		// Read from stdin
-		readStream(os.Stdin)
+		readStream(os.Stdin, MyPacketListener{})
 	}
 
 	for _, v := range connmap {
@@ -45,140 +37,39 @@ func main() {
 	wg.Wait()
 }
 
-func readStream(r io.Reader) {
-	pcapFileHeader, err := readPcapFileHeader(r)
-	if err != nil {
-		if err == io.EOF {
-			return
-		}
-		panic(err)
-	}
+type MyPacketListener struct {
+}
 
-	for {
-		err = readPacket(r, pcapFileHeader.ByteOrder)
-		if err != nil {
-			if err == io.EOF {
-				break
+func (MyPacketListener) NewPacket(fileHeader PcapFileHeader, ipacketHeader PcapPacketHeader, linkLayer, networkLayer, transportLayer interface{}) {
+	if transportLayer != nil {
+		switch transportLayer.(type) {
+		case *TCPFrame:
+			if logPackets {
+				handleTCP(networkLayer, *transportLayer.(*TCPFrame))
 			}
-			panic(err)
+		case *ICMPFrame:
+			if logPackets {
+				handleICMP(networkLayer, *transportLayer.(*ICMPFrame))
+			}
+		case *UDPFrame:
+			if logPackets {
+				handleUDP(networkLayer, *transportLayer.(*UDPFrame))
+			}
 		}
 	}
 }
 
-func readPacket(r io.Reader, bo binary.ByteOrder) error {
-	//
-	// Read pcap packet header
-	//
-	pcapPacketHeader, err := readPcapPacketHeader(r, bo)
-	if err != nil {
-		return err
-	}
-
-	//
-	// Read rest of the packet
-	//
-	packetData, err := readPacketData(r, pcapPacketHeader.IncludeLength())
-	if err != nil {
-		return err
-	}
-
-	return readEthernetPacket(packetData)
+func handleUDP(networkFrame interface{}, udpFrame UDPFrame) {
+	fmt.Printf("%15s:%-5d -> %15s:%-5d: %s, UDP, payload len: %d\n",
+		sourceAddressToString(networkFrame), udpFrame.Header.SourcePort(),
+		destinationAddressToString(networkFrame), udpFrame.Header.DestinationPort(),
+		networkTypeString(networkFrame),
+		udpFrame.Header.Length()-UDP_FRAME_HEADER_LENGTH)
 }
 
-type NetworkLayerFrame interface {
-	Version() uint8
-	Protocol() uint8
-	HeaderLength() uint8
-	TotalLength() uint16
-}
-
-func readNetworkLayer(data []byte, layerType uint16) (NetworkLayerFrame, error) {
-	switch layerType {
-	case ETHERTYPE_IPV4:
-		return NewIPv4FrameHeader(data)
-	case ETHERTYPE_IPV6:
-		return NewIPv6FrameHeader(data)
-	default:
-		return nil, nil
-	}
-}
-
-func readEthernetPacket(packetData []byte) error {
-	//
-	// Read ethernet frame header
-	//
-	ethernetFrameHeader, err := NewEthernetFrameHeader(packetData)
-	if err != nil {
-		return err
-	}
-
-	packetData = packetData[ETHERNET_FRAME_HEADER_LENGTH:]
-
-	//
-	// Read network layer frame header
-	//
-	ipFrameHeader, err := readNetworkLayer(packetData, ethernetFrameHeader.Type())
-	if err != nil {
-		return err
-	}
-	if ipFrameHeader == nil {
-		return nil
-	}
-
-	packetData = packetData[ipFrameHeader.HeaderLength():]
-
-	switch ipFrameHeader.Protocol() {
-	case PROTOCOL_TCP:
-		return handleTCP(packetData, ipFrameHeader)
-	case PROTOCOL_UDP:
-		return handleUDP(packetData, ipFrameHeader)
-	case PROTOCOL_ICMP:
-		return handleICMP(packetData, ipFrameHeader)
-	default:
-		fmt.Println("unknown frame skipped")
-	}
-
-	return nil
-}
-
-func handleUDP(packetData []byte, ipFrameHeader NetworkLayerFrame) error {
-	udpFrameHeader, err := NewUDPFrameHeader(packetData)
-	if err != nil {
-		return err
-	}
-
-	packetData = packetData[UDP_FRAME_HEADER_LENGTH:]
-	payloadLen := udpFrameHeader.Length() - UDP_FRAME_HEADER_LENGTH
-
-	//
-	// Log packet
-	//
-	if printPackets {
-		fmt.Printf("%15s:%-5d -> %15s:%-5d: IPv%d, UDP, payload len: %d\n", sourceAddressToString(ipFrameHeader),
-			udpFrameHeader.SourcePort(), destinationAddressToString(ipFrameHeader),
-			udpFrameHeader.DestinationPort(), ipFrameHeader.Version(), payloadLen)
-	}
-
-	return nil
-}
-
-func handleICMP(packetData []byte, ipFrameHeader NetworkLayerFrame) error {
-	icmpFrameHeader, err := NewICMPFrameHeader(packetData)
-	if err != nil {
-		return err
-	}
-
-	packetData = packetData[ICMP_FRAME_HEADER_LENGTH:]
-
-	//
-	// Log packet
-	//
-	if printPackets {
-		fmt.Printf("%15s -> %15s: ICMP Type %d\n", sourceAddressToString(ipFrameHeader),
-			destinationAddressToString(ipFrameHeader), icmpFrameHeader.Type())
-	}
-
-	return nil
+func handleICMP(networkFrame interface{}, icmpFrame ICMPFrame) {
+	fmt.Printf("%15s -> %15s: ICMP Type %d\n", sourceAddressToString(networkFrame),
+		destinationAddressToString(networkFrame), icmpFrame.Header.Type())
 }
 
 type HttpData struct {
@@ -199,14 +90,14 @@ func (httpData *HttpData) Close() {
 }
 
 type BufferedPacket struct {
-	IpFrameHeader *NetworkLayerFrame
-	Data          []byte
+	NetworkFrame *interface{}
+	TCPFrame     TCPFrame
 }
 
-type TcpProtocol uint8
+type TCPProtocol uint8
 
 const (
-	TCP_PROTO_INITIAL TcpProtocol = iota
+	TCP_PROTO_INITIAL TCPProtocol = iota
 	TCP_PROTO_HTTP
 	TCP_PROTO_UNKNOWN = 255
 )
@@ -215,7 +106,7 @@ type Conn struct {
 	ClientFlow *Flow
 	ServerFlow *Flow
 
-	TcpProtocol TcpProtocol
+	TCPProtocol TCPProtocol
 	Buffer      map[uint32]*BufferedPacket
 
 	HttpData *HttpData
@@ -270,40 +161,19 @@ func newHttpData() *HttpData {
 	return httpData
 }
 
-func handleTCP(origPacketData []byte, ipFrameHeader NetworkLayerFrame) error {
-	packetData := origPacketData
-	//
-	// Read TCP header
-	//
-	tcpFrameHeader, err := NewTcpFrameHeader(packetData)
-	if err != nil {
-		return err
-	}
-
-	packetData = packetData[TCP_FRAME_HEADER_LENGTH:]
-
-	//
-	// Read TCP options
-	//
-	tcpOptsLen := tcpFrameHeader.OptionsLength()
-	if tcpOptsLen > 0 {
-		packetData = packetData[tcpOptsLen:]
-	}
-
+func handleTCP(networkFrame interface{}, tcpFrame TCPFrame) error {
 	var conn *Conn
-	seq := tcpFrameHeader.SequenceNumber()
+	seq := tcpFrame.Header.SequenceNumber()
+	clientFlowAddress := FlowAddress{sourceAddressToString(networkFrame), tcpFrame.Header.SourcePort(), destinationAddressToString(networkFrame), tcpFrame.Header.DestinationPort()}
 
-	clientFlowAddress := FlowAddress{sourceAddressToString(ipFrameHeader), tcpFrameHeader.SourcePort(), destinationAddressToString(ipFrameHeader), tcpFrameHeader.DestinationPort()}
-
-	if tcpFrameHeader.FlagSYN() && !tcpFrameHeader.FlagACK() {
-
+	if tcpFrame.Header.FlagSYN() && !tcpFrame.Header.FlagACK() {
 		//
 		// create flows
 		//
 		clientFlow := &Flow{clientFlowAddress, 0, 0}
 		clientFlow.SetInitialSequence(seq)
 
-		serverFlowAddress := FlowAddress{destinationAddressToString(ipFrameHeader), tcpFrameHeader.DestinationPort(), sourceAddressToString(ipFrameHeader), tcpFrameHeader.SourcePort()}
+		serverFlowAddress := FlowAddress{destinationAddressToString(networkFrame), tcpFrame.Header.DestinationPort(), sourceAddressToString(networkFrame), tcpFrame.Header.SourcePort()}
 		serverFlow := &Flow{serverFlowAddress, 0, 0}
 
 		// create conns
@@ -336,7 +206,7 @@ func handleTCP(origPacketData []byte, ipFrameHeader NetworkLayerFrame) error {
 	skip := false
 
 	// handle SYN+ACK
-	if tcpFrameHeader.FlagSYN() && tcpFrameHeader.FlagACK() {
+	if tcpFrame.Header.FlagSYN() && tcpFrame.Header.FlagACK() {
 		conn.ServerFlow.SetInitialSequence(seq)
 	}
 
@@ -345,7 +215,7 @@ func handleTCP(origPacketData []byte, ipFrameHeader NetworkLayerFrame) error {
 	//
 	if seq > from.ExpectedSequenceNumber {
 		// future packet
-		conn.Buffer[seq] = &BufferedPacket{&ipFrameHeader, origPacketData}
+		conn.Buffer[seq] = &BufferedPacket{&networkFrame, tcpFrame}
 		skip = true
 		return nil
 	} else if seq < from.ExpectedSequenceNumber {
@@ -356,43 +226,40 @@ func handleTCP(origPacketData []byte, ipFrameHeader NetworkLayerFrame) error {
 	//
 	// Read TCP payload
 	//
-	payloadLen := uint32(ipFrameHeader.TotalLength() - uint16(ipFrameHeader.HeaderLength()) - uint16(tcpFrameHeader.DataOffset()))
 
-	if payloadLen > 0 && !skip {
-		payload := packetData[:payloadLen]
-
+	if len(tcpFrame.Payload) > 0 && !skip {
 		//
 		// try to identify protocol
 		//
-		if conn.TcpProtocol == TCP_PROTO_INITIAL {
-			if isHttpReq(payload) {
-				conn.TcpProtocol = TCP_PROTO_HTTP
+		if conn.TCPProtocol == TCP_PROTO_INITIAL {
+			if isHttpReq(tcpFrame.Payload) {
+				conn.TCPProtocol = TCP_PROTO_HTTP
 				conn.HttpData = newHttpData()
 			} else {
-				conn.TcpProtocol = TCP_PROTO_UNKNOWN
+				conn.TCPProtocol = TCP_PROTO_UNKNOWN
 			}
 		}
 
 		//
 		// handle HTTP
 		//
-		if conn.TcpProtocol == TCP_PROTO_HTTP {
+		if conn.TCPProtocol == TCP_PROTO_HTTP {
 			if isClient {
-				conn.HttpData.ReqWriter.Write(payload)
+				conn.HttpData.ReqWriter.Write(tcpFrame.Payload)
 			} else {
-				conn.HttpData.RespWriter.Write(payload)
+				conn.HttpData.RespWriter.Write(tcpFrame.Payload)
 			}
 		}
 
 		//
 		// increment next expected sequence number
 		//
-		from.ExpectedSequenceNumber += payloadLen
+		from.ExpectedSequenceNumber += uint32(len(tcpFrame.Payload))
 	} else {
 		//
 		// increment next expected sequence number
 		//
-		if tcpFrameHeader.FlagSYN() {
+		if tcpFrame.Header.FlagSYN() {
 			from.ExpectedSequenceNumber += 1
 		}
 	}
@@ -400,7 +267,7 @@ func handleTCP(origPacketData []byte, ipFrameHeader NetworkLayerFrame) error {
 	//
 	// Handle FIN
 	//
-	if tcpFrameHeader.FlagFIN() {
+	if tcpFrame.Header.FlagFIN() {
 		fmt.Println("FIXME: handle FIN")
 		if conn.HttpData != nil {
 			conn.HttpData.Close()
@@ -410,14 +277,14 @@ func handleTCP(origPacketData []byte, ipFrameHeader NetworkLayerFrame) error {
 	//
 	// Log packet
 	//
-	if printPackets {
-		fmt.Printf("%15s:%-5d -> %15s:%-5d: IPv%d, TCP [%7s], RSN: %d, RAN: %d, payload len: %d\n",
-			sourceAddressToString(ipFrameHeader), tcpFrameHeader.SourcePort(),
-			destinationAddressToString(ipFrameHeader), tcpFrameHeader.DestinationPort(),
-			ipFrameHeader.Version(), flagString(*tcpFrameHeader),
-			from.RelativeSequenceNumber(tcpFrameHeader.SequenceNumber()),
-			to.RelativeSequenceNumber(tcpFrameHeader.AcknowledgeNumber()),
-			payloadLen)
+	if logPackets {
+		fmt.Printf("%15s:%-5d -> %15s:%-5d: %s, TCP [%7s], RSN: %d, RAN: %d, payload len: %d\n",
+			sourceAddressToString(networkFrame), tcpFrame.Header.SourcePort(),
+			destinationAddressToString(networkFrame), tcpFrame.Header.DestinationPort(),
+			networkTypeString(networkFrame), flagString(*tcpFrame.Header),
+			from.RelativeSequenceNumber(tcpFrame.Header.SequenceNumber()),
+			to.RelativeSequenceNumber(tcpFrame.Header.AcknowledgeNumber()),
+			len(tcpFrame.Payload))
 	}
 
 	//
@@ -430,234 +297,10 @@ func handleTCP(origPacketData []byte, ipFrameHeader NetworkLayerFrame) error {
 		}
 
 		delete(conn.Buffer, from.ExpectedSequenceNumber)
-		handleTCP(bp.Data, *bp.IpFrameHeader) // FIXME: handle error
+		handleTCP(*bp.NetworkFrame, bp.TCPFrame) // FIXME: handle error
 	}
 
 	return nil
-}
-
-func printHttpRequest(httpData *HttpData) {
-	for {
-		//
-		// Read request
-		//
-		req, err := http.ReadRequest(bufio.NewReader(httpData.ReqReader))
-		if err != nil {
-			if err == io.EOF || err == io.ErrClosedPipe {
-				return
-			}
-
-			fmt.Println(err) // FIXME
-			continue
-		}
-
-		//
-		// Print Request-Line
-		//
-		fmt.Println(green(fmt.Sprintf("%s %s %s", req.Method, req.URL, req.Proto)))
-
-		//
-		// Print headers
-		//
-		for k, va := range req.Header {
-			for _, v := range va {
-				fmt.Println(green(fmt.Sprintf("%s: %s", k, v)))
-			}
-		}
-
-		//
-		// Print content
-		//
-		if req.ContentLength > 0 {
-			//
-			// Print only text content
-			//
-			if isTextContentType(req.Header.Get("Content-Type")) {
-				defer req.Body.Close()
-				buf, err := ioutil.ReadAll(req.Body)
-				if err != nil {
-					// FIXME
-				}
-
-				fmt.Println()
-				fmt.Println(green(string(buf)))
-			} else {
-				fmt.Println()
-				fmt.Println(green("<binary content>"))
-			}
-		}
-	}
-}
-
-func statusText(statusStr string) string {
-	splitted := strings.Split(statusStr, " ")
-	statusCode, _ := strconv.Atoi(splitted[0])
-	statusMessage := splitted[1]
-	var statusCodeStr string
-
-	switch {
-	case 200 <= statusCode && statusCode <= 299:
-		statusCodeStr = green(strconv.Itoa(statusCode))
-	case 300 <= statusCode && statusCode <= 399:
-		statusCodeStr = green(strconv.Itoa(statusCode))
-	case 400 <= statusCode && statusCode <= 499:
-		statusCodeStr = green(strconv.Itoa(statusCode))
-	case 500 <= statusCode && statusCode <= 599:
-		statusCodeStr = green(strconv.Itoa(statusCode))
-	default:
-		statusCodeStr = green(strconv.Itoa(statusCode))
-	}
-
-	return statusCodeStr + " " + statusMessage
-}
-
-func printHttpResponse(httpData *HttpData) {
-	for {
-		resp, err := http.ReadResponse(bufio.NewReader(httpData.RespReader), nil)
-		if err != nil {
-			if err == io.ErrClosedPipe || err == io.EOF || err == io.ErrUnexpectedEOF {
-				return
-			}
-			fmt.Println("ERROR WHILE READING RESPONSE")
-			fmt.Println(err)
-
-			continue
-		}
-
-		//
-		// Print Response-line
-		//
-		fmt.Println(yellow(fmt.Sprintf("%s %s", resp.Proto, statusText(resp.Status))))
-
-		//
-		// Print headers
-		//
-		for k, va := range resp.Header {
-			for _, v := range va {
-				fmt.Println(yellow(fmt.Sprintf("%s: %s", k, v)))
-			}
-		}
-
-		//
-		// Print content
-		//
-		defer resp.Body.Close()
-		buf, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			// FIXME
-		}
-
-		if isTextContentType(resp.Header.Get("Content-Type")) {
-			switch resp.Header.Get("Content-Encoding") {
-			case "":
-				// do nothing
-			case "gzip":
-				buf, err = readGzip(buf)
-				// FIXME: handle err
-			default:
-				// unknown encoding
-				buf = nil
-			}
-
-			printPayload(buf, buf != nil)
-		} else {
-			printPayload(nil, false)
-		}
-	}
-}
-
-func readGzip(data []byte) ([]byte, error) {
-	gzipReader, err := gzip.NewReader(bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-
-	defer gzipReader.Close()
-
-	buf, err := ioutil.ReadAll(gzipReader)
-	if err != nil {
-		return nil, err
-	}
-
-	return buf, nil
-}
-
-func printPayload(buf []byte, isText bool) {
-	if isText {
-		printTextPayload(buf)
-	} else {
-		fmt.Println()
-		fmt.Println(blue("<binary content>"))
-	}
-}
-
-func printTextPayload(buf []byte) {
-	payloadStr := string(buf)
-	payloadLen := len(payloadStr)
-	snipped := 0
-
-	//
-	// check if payload needs to be cut
-	//
-	if payloadLen > payloadMaxLength {
-		payloadStr = payloadStr[:payloadMaxLength]
-		snipped = payloadLen - payloadMaxLength
-	}
-
-	//
-	// print
-	//
-	fmt.Println()
-	fmt.Print(blue(payloadStr))
-	if snipped > 0 {
-		fmt.Printf("... (%d bytes snipped)", snipped)
-	}
-	fmt.Println()
-}
-
-func isTextContentType(ct string) bool {
-	return strings.HasPrefix(ct, "text/") ||
-		strings.HasPrefix(ct, "application/json") ||
-		strings.HasPrefix(ct, "application/x-javascript")
-}
-
-func isHttpReq(bytes []byte) bool {
-	l := len(bytes)
-
-	for i, b := range bytes {
-		//
-		// minimum number of bytes before ' HTTP...'
-		//
-		if i < 3 {
-			continue
-		}
-
-		if i+11 > l {
-			return false
-		}
-
-		// find request-line ending, example: ' HTTP/1.1<CR><LF>'
-		if b == ' ' &&
-			bytes[i+1] == 'H' &&
-			bytes[i+2] == 'T' &&
-			bytes[i+3] == 'T' &&
-			bytes[i+4] == 'P' &&
-			bytes[i+5] == '/' &&
-			'0' <= bytes[i+6] && bytes[i+6] <= '9' &&
-			bytes[i+7] == '.' &&
-			'0' <= bytes[i+8] && bytes[i+8] <= '9' &&
-			bytes[i+9] == 13 && // CR
-			bytes[i+10] == 10 { // LF
-			return true
-		}
-
-		// check byte is TEXT
-		if b <= 31 && b >= 127 {
-			return false
-		}
-	}
-
-	return false
 }
 
 func red(s string) string {
@@ -676,12 +319,23 @@ func green(s string) string {
 	return "\033[92m" + s + "\033[0m"
 }
 
+func networkTypeString(n interface{}) string {
+	switch t := n.(type) {
+	case *IPv4Frame:
+		return "IPv4"
+	case *IPv6Frame:
+		return "IPv6"
+	default:
+		panic(fmt.Sprintf("Unknown frame header type: %T", t))
+	}
+}
+
 func sourceAddress(a interface{}) interface{} {
 	switch t := a.(type) {
-	case *IPv4FrameHeader:
-		return a.(*IPv4FrameHeader).SourceAddress()
-	case *IPv6FrameHeader:
-		return a.(*IPv6FrameHeader).SourceAddress()
+	case *IPv4Frame:
+		return a.(*IPv4Frame).Header.SourceAddress()
+	case *IPv6Frame:
+		return a.(*IPv6Frame).Header.SourceAddress()
 	default:
 		panic(fmt.Sprintf("Unknown frame header type: %T", t))
 	}
@@ -689,10 +343,10 @@ func sourceAddress(a interface{}) interface{} {
 
 func destinationAddress(a interface{}) interface{} {
 	switch t := a.(type) {
-	case *IPv4FrameHeader:
-		return a.(*IPv4FrameHeader).DestinationAddress()
-	case *IPv6FrameHeader:
-		return a.(*IPv6FrameHeader).DestinationAddress()
+	case *IPv4Frame:
+		return a.(*IPv4Frame).Header.DestinationAddress()
+	case *IPv6Frame:
+		return a.(*IPv6Frame).Header.DestinationAddress()
 	default:
 		panic(fmt.Sprintf("Unknown frame header type: %T", t))
 	}
@@ -700,10 +354,14 @@ func destinationAddress(a interface{}) interface{} {
 
 func sourceAddressToString(a interface{}) string {
 	switch t := a.(type) {
-	case *IPv4FrameHeader:
-		return IPv4String(a.(*IPv4FrameHeader).SourceAddress())
-	case *IPv6FrameHeader:
-		return IPv6String(a.(*IPv6FrameHeader).SourceAddress())
+	case *IPv4Frame:
+		return IPv4String(a.(*IPv4Frame).Header.SourceAddress())
+	case IPv4Frame:
+		return IPv4String(a.(IPv4Frame).Header.SourceAddress())
+	case *IPv6Frame:
+		return IPv6String(a.(*IPv6Frame).Header.SourceAddress())
+	case IPv6Frame:
+		return IPv6String(a.(IPv6Frame).Header.SourceAddress())
 	default:
 		panic(fmt.Sprintf("Unknown frame header type: %T", t))
 	}
@@ -711,10 +369,10 @@ func sourceAddressToString(a interface{}) string {
 
 func destinationAddressToString(a interface{}) string {
 	switch t := a.(type) {
-	case *IPv4FrameHeader:
-		return IPv4String(a.(*IPv4FrameHeader).DestinationAddress())
-	case *IPv6FrameHeader:
-		return IPv6String(a.(*IPv6FrameHeader).DestinationAddress())
+	case *IPv4Frame:
+		return IPv4String(a.(*IPv4Frame).Header.DestinationAddress())
+	case *IPv6Frame:
+		return IPv6String(a.(*IPv6Frame).Header.DestinationAddress())
 	default:
 		panic(fmt.Sprintf("Unknown frame header type: %T", t))
 	}

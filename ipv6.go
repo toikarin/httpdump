@@ -10,8 +10,26 @@ const (
 	IPV6_FRAME_HEADER_LENGTH = 40
 )
 
+type IPv6Frame struct {
+	Header  *IPv6FrameHeader
+	Payload []byte
+}
+
 type IPv6FrameHeader struct {
 	data []byte
+}
+
+func NewIPv6Frame(data []byte) (*IPv6Frame, error) {
+	header, err := NewIPv6FrameHeader(data)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(data) < int(IPV6_FRAME_HEADER_LENGTH+header.PayloadLength()) {
+		return nil, errors.New(fmt.Sprintf("required at least %d bytes of data.", IPV6_FRAME_HEADER_LENGTH+header.PayloadLength()))
+	}
+
+	return &IPv6Frame{header, data[IPV6_FRAME_HEADER_LENGTH:IPV6_FRAME_HEADER_LENGTH+header.PayloadLength()]}, nil
 }
 
 func NewIPv6FrameHeader(data []byte) (*IPv6FrameHeader, error) {
@@ -36,14 +54,6 @@ func (p IPv6FrameHeader) FlowControl() uint32 {
 
 func (p IPv6FrameHeader) PayloadLength() uint16 {
 	return binary.BigEndian.Uint16(p.data[4:6])
-}
-
-func (p IPv6FrameHeader) HeaderLength() uint8 {
-	return IPV6_FRAME_HEADER_LENGTH
-}
-
-func (p IPv6FrameHeader) TotalLength() uint16 {
-	return IPV6_FRAME_HEADER_LENGTH + p.PayloadLength()
 }
 
 func (p IPv6FrameHeader) NextHeader() uint8 {

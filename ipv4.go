@@ -10,8 +10,26 @@ const (
 	IPV4_FRAME_HEADER_LENGTH = 20
 )
 
+type IPv4Frame struct {
+	Header  *IPv4FrameHeader
+	Payload []byte
+}
+
 type IPv4FrameHeader struct {
 	data []byte
+}
+
+func NewIPv4Frame(data []byte) (*IPv4Frame, error) {
+	header, err := NewIPv4FrameHeader(data)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(data) < int(header.TotalLength()) {
+		return nil, errors.New(fmt.Sprintf("required at least %d bytes of data.", header.TotalLength()))
+	}
+
+	return &IPv4Frame{header, data[header.HeaderLength():header.TotalLength()]}, nil
 }
 
 func NewIPv4FrameHeader(data []byte) (*IPv4FrameHeader, error) {
