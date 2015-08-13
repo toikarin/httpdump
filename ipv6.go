@@ -10,6 +10,8 @@ const (
 	IPV6_FRAME_HEADER_LENGTH = 40
 )
 
+type IPv6Address [8]uint16
+
 type IPv6Frame struct {
 	Header  *IPv6FrameHeader
 	Payload []byte
@@ -68,8 +70,8 @@ func (p IPv6FrameHeader) HopLimit() uint8 {
 	return p.data[7]
 }
 
-func (p IPv6FrameHeader) SourceAddress() []uint16 {
-	return []uint16{
+func (p IPv6FrameHeader) SourceAddress() IPv6Address {
+	return IPv6Address{
 		binary.BigEndian.Uint16(p.data[8:10]),
 		binary.BigEndian.Uint16(p.data[10:12]),
 		binary.BigEndian.Uint16(p.data[12:14]),
@@ -81,8 +83,8 @@ func (p IPv6FrameHeader) SourceAddress() []uint16 {
 	}
 }
 
-func (p IPv6FrameHeader) DestinationAddress() []uint16 {
-	return []uint16{
+func (p IPv6FrameHeader) DestinationAddress() IPv6Address {
+	return IPv6Address{
 		binary.BigEndian.Uint16(p.data[24:26]),
 		binary.BigEndian.Uint16(p.data[26:28]),
 		binary.BigEndian.Uint16(p.data[28:30]),

@@ -12,6 +12,83 @@ import (
 	"strings"
 )
 
+type HttpData struct {
+	DataReceived bool
+	ReqReader    *io.PipeReader
+	ReqWriter    *io.PipeWriter
+	RespReader   *io.PipeReader
+	RespWriter   *io.PipeWriter
+}
+
+type HttpTCPListener struct {
+	conns map[TCPListenerConnection]*HttpData
+}
+
+func NewHTTPTcpListener() *HttpTCPListener {
+	h := HttpTCPListener{}
+	h.conns = make(map[TCPListenerConnection]*HttpData)
+
+	return &h
+}
+
+func (htl *HttpTCPListener) NewConnection(conn TCPListenerConnection) {
+	httpData := &HttpData{}
+	httpData.DataReceived = false
+	httpData.ReqReader, httpData.ReqWriter = io.Pipe()
+	httpData.RespReader, httpData.RespWriter = io.Pipe()
+	wg.Add(2)
+
+	go func(httpData *HttpData) {
+		defer wg.Done()
+		printHttpRequest(httpData)
+	}(httpData)
+
+	go func(httpData *HttpData) {
+		defer wg.Done()
+		printHttpResponse(httpData)
+	}(httpData)
+
+	htl.conns[conn] = httpData
+}
+
+func (htl *HttpTCPListener) Data(conn TCPListenerConnection, data []byte, isClient bool) {
+	state, ok := htl.conns[conn]
+	if !ok {
+		return
+	}
+
+	if !state.DataReceived {
+		if !isHttpReq(data) {
+			htl.ClosedConnection(conn)
+			return
+		}
+
+		state.DataReceived = true
+	}
+
+	if isClient {
+		state.ReqWriter.Write(data)
+	} else {
+		state.RespWriter.Write(data)
+	}
+}
+
+func (htl *HttpTCPListener) ClosedConnection(conn TCPListenerConnection) {
+	state, ok := htl.conns[conn]
+	if !ok {
+		return
+	}
+
+	delete(htl.conns, conn)
+
+	if state.ReqWriter != nil {
+		state.ReqWriter.Close()
+	}
+	if state.RespWriter != nil {
+		state.RespWriter.Close()
+	}
+}
+
 func isHttpReq(bytes []byte) bool {
 	l := len(bytes)
 

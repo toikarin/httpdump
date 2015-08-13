@@ -44,7 +44,7 @@ func IPv4String(a uint32) string {
 	return fmt.Sprintf("%d.%d.%d.%d", a>>24, (a&0xFF0000)>>16, (a&0xFF00)>>8, (a & 0xFF))
 }
 
-func IPv6String(a []uint16) string {
+func IPv6String(a IPv6Address) string {
 	longest, longestIdx := -1, -1
 	curStreak, curIdx := -1, -1
 
