@@ -21,15 +21,26 @@ func MacString(mac []byte) string {
 	return fmt.Sprintf("%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
 }
 
-func etherType(t uint16) string {
+func EtherTypeToString(t uint16) string {
 	switch t {
 	case ETHERTYPE_IPV4:
 		return "IPv4"
 	case ETHERTYPE_IPV6:
 		return "IPv6"
+	case ETHERTYPE_ARP:
+		return "ARP"
+	case ETHERTYPE_LLDP:
+		return "LLDP"
 	default:
 		return "unknown"
 	}
+}
+
+func (f EthernetFrame) String() string {
+	return fmt.Sprintf(`[EthernetFrame:
+  Header:         %s
+  Payload Length: %d
+]`, f.Header, len(f.Payload))
 }
 
 func (p EthernetFrameHeader) String() string {
@@ -37,7 +48,18 @@ func (p EthernetFrameHeader) String() string {
   SourceMac:      %s
   DestinationMac: %s
   Type:           0x%x (%s)
-]`, MacString(p.Destination()), MacString(p.Source()), p.Type(), etherType(p.Type()))
+]`, MacString(p.Destination()), MacString(p.Source()), p.Type(), EtherTypeToString(p.Type()))
+}
+
+func AddressToString(a interface{}) string {
+	switch t := a.(type) {
+	case uint32:
+		return IPv4String(a.(uint32))
+	case IPv6Address:
+		return IPv6String(a.(IPv6Address))
+	default:
+		panic(fmt.Sprintf("Unknown address type: %T", t))
+	}
 }
 
 func IPv4String(a uint32) string {
@@ -94,7 +116,7 @@ func IPv6String(a IPv6Address) string {
 	return s
 }
 
-func protocol(p uint8) string {
+func IpProtocolToString(p uint8) string {
 	switch p {
 	case PROTOCOL_TCP:
 		return "tcp"
@@ -102,6 +124,12 @@ func protocol(p uint8) string {
 		return "udp"
 	case PROTOCOL_ICMP:
 		return "icmp"
+	case PROTOCOL_IGMP:
+		return "igmp"
+	case PROTOCOL_ICMP_V6:
+		return "icmp for IPv6"
+	case PROTOCOL_HOPOPT:
+		return "IPv6 Hop-by-Hop Option"
 	default:
 		return "unknown"
 	}
@@ -122,7 +150,7 @@ func (p IPv4FrameHeader) String() string {
   Source Address:      %s
   Destination Address: %s
 ]`, p.Version(), p.HeaderLength(), p.DSCP(), p.ECN(), p.TotalLength(), p.Identification(), binarystr(int64(p.Flags())), p.DontFragment(), p.MoreFragments(),
-		p.FragmentOffset(), p.TimeToLive(), p.Protocol(), protocol(p.Protocol()), IPv4String(p.SourceAddress()), IPv4String(p.DestinationAddress()))
+		p.FragmentOffset(), p.TimeToLive(), p.Protocol(), IpProtocolToString(p.Protocol()), IPv4String(p.SourceAddress()), IPv4String(p.DestinationAddress()))
 }
 
 func (p IPv6FrameHeader) String() string {

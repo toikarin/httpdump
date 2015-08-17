@@ -18,9 +18,6 @@ type TCPFrameHeader struct {
 
 const (
 	TCP_FRAME_HEADER_LENGTH = 20
-	PROTOCOL_ICMP           = 1
-	PROTOCOL_TCP            = 6
-	PROTOCOL_UDP            = 17
 )
 
 func NewTCPFrame(data []byte) (*TCPFrame, error) {

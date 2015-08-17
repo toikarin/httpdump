@@ -19,12 +19,18 @@ const (
 	ETHERNET_FRAME_HEADER_LENGTH = 14
 	ETHERTYPE_IPV4               = 0x800
 	ETHERTYPE_IPV6               = 0x86DD
+	ETHERTYPE_ARP                = 0x806
+	ETHERTYPE_LLDP               = 0x88CC
 )
 
 func NewEthernetFrame(data []byte) (*EthernetFrame, error) {
 	header, err := NewEthernetFrameHeader(data)
 	if err != nil {
 		return nil, err
+	}
+
+	if header.Type() < 0x600 {
+		return nil, nil // NOT ethernet II frame
 	}
 
 	return &EthernetFrame{header, data[ETHERNET_FRAME_HEADER_LENGTH:]}, nil

@@ -31,7 +31,7 @@ func NewIPv6Frame(data []byte) (*IPv6Frame, error) {
 		return nil, errors.New(fmt.Sprintf("required at least %d bytes of data.", IPV6_FRAME_HEADER_LENGTH+header.PayloadLength()))
 	}
 
-	return &IPv6Frame{header, data[IPV6_FRAME_HEADER_LENGTH:IPV6_FRAME_HEADER_LENGTH+header.PayloadLength()]}, nil
+	return &IPv6Frame{header, data[IPV6_FRAME_HEADER_LENGTH : IPV6_FRAME_HEADER_LENGTH+header.PayloadLength()]}, nil
 }
 
 func NewIPv6FrameHeader(data []byte) (*IPv6FrameHeader, error) {

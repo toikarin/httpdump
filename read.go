@@ -2,39 +2,12 @@ package main
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 )
 
 type PacketListener interface {
 	NewPacket(fileHeader PcapFileHeader, ipacketHeader PcapPacketHeader, linkLayer, networkLayer, transportLayer interface{})
-}
-
-func readPcapFileHeader(r io.Reader) (header *PcapFileHeader, err error) {
-	buf, err := read(r, PCAP_FILE_HEADER_LENGTH)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewPcapFileHeader(buf)
-}
-
-func readPcapPacketHeader(r io.Reader, bo binary.ByteOrder) (*PcapPacketHeader, error) {
-	buf, err := read(r, PCAP_PACKET_HEADER_LENGTH)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewPcapPacketHeader(buf, bo)
-}
-
-func read(r io.Reader, len uint32) (data []byte, err error) {
-	buf := make([]byte, len)
-
-	if _, err = io.ReadFull(r, buf); err != nil {
-		return nil, err
-	}
-
-	return buf, nil
 }
 
 func readStream(r io.Reader, packetListener PacketListener) error {
@@ -85,6 +58,24 @@ func readPacket(r io.Reader, bo binary.ByteOrder) (pcapPacketHeader *PcapPacketH
 	return
 }
 
+func readPcapFileHeader(r io.Reader) (header *PcapFileHeader, err error) {
+	buf, err := read(r, PCAP_FILE_HEADER_LENGTH)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewPcapFileHeader(buf)
+}
+
+func readPcapPacketHeader(r io.Reader, bo binary.ByteOrder) (*PcapPacketHeader, error) {
+	buf, err := read(r, PCAP_PACKET_HEADER_LENGTH)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewPcapPacketHeader(buf, bo)
+}
+
 func readEthernetPacket(packetData []byte) (linkLayer, networkLayer, transportLayer interface{}, err error) {
 	var protocol uint8
 	var payload []byte
@@ -96,6 +87,9 @@ func readEthernetPacket(packetData []byte) (linkLayer, networkLayer, transportLa
 	ethernetFrame, err := NewEthernetFrame(packetData)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	if ethernetFrame == nil {
+		return nil, nil, nil, nil
 	}
 
 	//
@@ -121,6 +115,9 @@ func readEthernetPacket(packetData []byte) (linkLayer, networkLayer, transportLa
 		payload = ipv6Frame.Payload
 		protocol = ipv6Frame.Header.Protocol()
 	default:
+		// unknown network layer
+		readdebug(fmt.Sprintf("Unsupported network layer of type %d [%s].",
+			ethernetFrame.Header.Type(), EtherTypeToString(ethernetFrame.Header.Type())))
 		return ethernetFrame, nil, nil, nil
 	}
 
@@ -139,6 +136,24 @@ func readEthernetPacket(packetData []byte) (linkLayer, networkLayer, transportLa
 		return ethernetFrame, networkFrame, icmpFrame, err
 	default:
 		// unknown transport layer
+		readdebug(fmt.Sprintf("Unsupported transport layer of protocol %d [%s].",
+			protocol, IpProtocolToString(protocol)))
 		return ethernetFrame, networkFrame, nil, nil
+	}
+}
+
+func read(r io.Reader, len uint32) (data []byte, err error) {
+	buf := make([]byte, len)
+
+	if _, err = io.ReadFull(r, buf); err != nil {
+		return nil, err
+	}
+
+	return buf, nil
+}
+
+func readdebug(a ...interface{}) {
+	if true {
+		debug("debug-read:", a...)
 	}
 }

@@ -8,6 +8,12 @@ import (
 
 const (
 	IPV4_FRAME_HEADER_LENGTH = 20
+	PROTOCOL_HOPOPT          = 0
+	PROTOCOL_ICMP            = 1
+	PROTOCOL_IGMP            = 2
+	PROTOCOL_TCP             = 6
+	PROTOCOL_UDP             = 17
+	PROTOCOL_ICMP_V6         = 58
 )
 
 type IPv4Frame struct {

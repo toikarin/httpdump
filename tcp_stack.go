@@ -27,7 +27,7 @@ type Flow struct {
 	Address                FlowAddress
 	InitialSequenceNumber  uint32
 	ExpectedSequenceNumber uint32
-	TCPState               TCPState
+	Finished               bool
 }
 
 func (f *Flow) SetInitialSequence(s uint32) {
@@ -52,14 +52,14 @@ type TCPConnection struct {
 	ClientFlow *Flow
 	ServerFlow *Flow
 
-	Buffer      map[uint32]*BufferedPacket
+	Buffer map[uint32]*BufferedPacket
 }
 
-func (conn *TCPConnection) Flows(flowAddress FlowAddress) (flow *Flow, isClient bool) {
+func (conn *TCPConnection) Flows(flowAddress FlowAddress) (from, to *Flow, isClient bool) {
 	if conn.ClientFlow.Address == flowAddress {
-		return conn.ClientFlow, true
+		return conn.ClientFlow, conn.ServerFlow, true
 	} else {
-		return conn.ServerFlow, false
+		return conn.ServerFlow, conn.ClientFlow, false
 	}
 }
 
@@ -79,7 +79,7 @@ func (tcpStack *TCPStack) newConnection(clientFlowAddress FlowAddress, tcpFrame 
 	//
 	// create flows
 	//
-	clientFlow := &Flow{clientFlowAddress, 0, 0, TCP_STATE_CLIENT_SYN_SENT}
+	clientFlow := &Flow{clientFlowAddress, 0, 0, false}
 
 	serverFlowAddress := FlowAddress{
 		SourceAddress:      clientFlowAddress.DestinationAddress,
@@ -87,7 +87,7 @@ func (tcpStack *TCPStack) newConnection(clientFlowAddress FlowAddress, tcpFrame 
 		DestinationAddress: clientFlowAddress.SourceAddress,
 		DestinationPort:    clientFlowAddress.SourcePort,
 	}
-	serverFlow := &Flow{serverFlowAddress, 0, 0, TCP_STATE_SERVER_SYN_RECEIVED}
+	serverFlow := &Flow{serverFlowAddress, 0, 0, false}
 
 	// create connection
 	conn := &TCPConnection{clientFlow, serverFlow, make(map[uint32]*BufferedPacket)}
@@ -109,7 +109,7 @@ type TCPListenerConnection struct {
 	ClientPort    uint16
 
 	ServerAddress interface{}
-	ServerPort     uint16
+	ServerPort    uint16
 }
 
 type TCPListener interface {
@@ -143,12 +143,12 @@ func (tcpStack *TCPStack) NewPacket(networkFrame *interface{}, tcpFrame *TCPFram
 		conn, ok = tcpStack.connections[flowAddress]
 		if !ok {
 			// unknown connection, can happen for example when connection is opened before tcpdump starts.
-			fmt.Println("UNKNOWN CONN")
+			//fmt.Println("UNKNOWN CONN")
 			return
 		}
 	}
 
-	from, isClient := conn.Flows(flowAddress)
+	from, to, isClient := conn.Flows(flowAddress)
 	seq := tcpFrame.Header.SequenceNumber()
 
 	if tcpFrame.Header.FlagSYN() {
@@ -162,17 +162,18 @@ func (tcpStack *TCPStack) NewPacket(networkFrame *interface{}, tcpFrame *TCPFram
 		// FIXME: add some kind of thresholds for max diff
 		//
 		if seq > from.ExpectedSequenceNumber {
-			fmt.Println("FUTURE")
-			fmt.Println("Expected", from.ExpectedSequenceNumber, "got", seq)
-			fmt.Println("diff", seq - from.ExpectedSequenceNumber)
 			// future packet
-			conn.Buffer[seq] = &BufferedPacket{networkFrame, tcpFrame}
+
+			tcpstackdebug(fmt.Sprintf("tcp-debug: buffered future packet. Expected", from.ExpectedSequenceNumber, "got", seq, "diff", seq-from.ExpectedSequenceNumber))
+
+			_, ok := conn.Buffer[seq]
+			if !ok {
+				conn.Buffer[seq] = &BufferedPacket{networkFrame, tcpFrame}
+			}
 			return
 		} else if seq < from.ExpectedSequenceNumber {
 			// past packet
-			fmt.Println("Expected", from.ExpectedSequenceNumber, "got", seq)
-			fmt.Println("diff", seq - from.ExpectedSequenceNumber)
-			fmt.Println("PAST PACKET")
+			tcpstackdebug(fmt.Sprintf("tcp-debug: ignored past packet. Expected", from.ExpectedSequenceNumber, "got", seq, "diff", from.ExpectedSequenceNumber-seq))
 			return
 		}
 	}
@@ -195,19 +196,30 @@ func (tcpStack *TCPStack) NewPacket(networkFrame *interface{}, tcpFrame *TCPFram
 	// Handle FIN
 	//
 	if tcpFrame.Header.FlagFIN() {
-		// FIXME
+		from.Finished = true
+
+		// wait for last ack?
+		if from.Finished && to.Finished {
+			closedConnection = true
+		}
+	}
+
+	//
+	// Handle RST
+	//
+	if tcpFrame.Header.FlagRST() {
+		closedConnection = true
 	}
 
 	//
 	// Notify
 	//
 	tcpListenerConn := TCPListenerConnection{
-		ClientAddress:      conn.ClientFlow.Address.SourceAddress,
-		ClientPort:         conn.ClientFlow.Address.SourcePort,
-		ServerAddress:      conn.ClientFlow.Address.DestinationAddress,
-		ServerPort:         conn.ClientFlow.Address.DestinationPort,
+		ClientAddress: conn.ClientFlow.Address.SourceAddress,
+		ClientPort:    conn.ClientFlow.Address.SourcePort,
+		ServerAddress: conn.ClientFlow.Address.DestinationAddress,
+		ServerPort:    conn.ClientFlow.Address.DestinationPort,
 	}
-
 
 	if newConnection {
 		tcpStack.tcpListener.NewConnection(tcpListenerConn)
@@ -220,11 +232,17 @@ func (tcpStack *TCPStack) NewPacket(networkFrame *interface{}, tcpFrame *TCPFram
 	}
 
 	//
-	// handle next buffered packets
+	// Handle next buffered packet
 	//
 	bp, ok := conn.Buffer[from.ExpectedSequenceNumber]
 	if ok {
 		delete(conn.Buffer, from.ExpectedSequenceNumber)
 		tcpStack.NewPacket(bp.NetworkFrame, bp.TCPFrame)
+	}
+}
+
+func tcpstackdebug(a ...interface{}) {
+	if true {
+		debug("debug-tcpstack:", a...)
 	}
 }
