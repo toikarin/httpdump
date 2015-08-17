@@ -25,6 +25,18 @@ type HttpData struct {
 	reqRespWriter *HttpRequestResponseWriter
 }
 
+func (httpData *HttpData) Close() {
+	if httpData.reqWriter != nil {
+		httpData.reqWriter.Close()
+	}
+	if httpData.respWriter != nil {
+		httpData.respWriter.Close()
+	}
+	if httpData.reqRespWriter != nil {
+		httpData.reqRespWriter.Close()
+	}
+}
+
 type HttpTCPListener struct {
 	conns map[TCPListenerConnection]*HttpData
 }
@@ -116,15 +128,7 @@ func (htl *HttpTCPListener) ClosedConnection(conn TCPListenerConnection) {
 
 	delete(htl.conns, conn)
 
-	if httpData.reqWriter != nil {
-		httpData.reqWriter.Close()
-	}
-	if httpData.respWriter != nil {
-		httpData.respWriter.Close()
-	}
-	if httpData.reqRespWriter != nil {
-		httpData.reqRespWriter.Close()
-	}
+	httpData.Close()
 	httpdebug("closed")
 }
 
@@ -515,7 +519,7 @@ func isHttpReq(bytes []byte) bool {
 }
 
 func httpdebug(a ...interface{}) {
-	if false {
+	if true {
 		debug("debug-http:", a...)
 	}
 }

@@ -164,7 +164,7 @@ func (tcpStack *TCPStack) NewPacket(networkFrame *interface{}, tcpFrame *TCPFram
 		if seq > from.ExpectedSequenceNumber {
 			// future packet
 
-			tcpstackdebug(fmt.Sprintf("tcp-debug: buffered future packet. Expected", from.ExpectedSequenceNumber, "got", seq, "diff", seq-from.ExpectedSequenceNumber))
+			tcpstackdebug(fmt.Sprintf("tcp-debug: buffered future packet. Expected %d, got %d (diff: %d).", from.ExpectedSequenceNumber, seq, seq-from.ExpectedSequenceNumber))
 
 			_, ok := conn.Buffer[seq]
 			if !ok {
@@ -173,7 +173,7 @@ func (tcpStack *TCPStack) NewPacket(networkFrame *interface{}, tcpFrame *TCPFram
 			return
 		} else if seq < from.ExpectedSequenceNumber {
 			// past packet
-			tcpstackdebug(fmt.Sprintf("tcp-debug: ignored past packet. Expected", from.ExpectedSequenceNumber, "got", seq, "diff", from.ExpectedSequenceNumber-seq))
+			tcpstackdebug(fmt.Sprintf("tcp-debug: ignored past packet. Expected %d, got %d (diff: %d).", from.ExpectedSequenceNumber, seq, from.ExpectedSequenceNumber-seq))
 			return
 		}
 	}
@@ -229,6 +229,9 @@ func (tcpStack *TCPStack) NewPacket(networkFrame *interface{}, tcpFrame *TCPFram
 	}
 	if closedConnection {
 		tcpStack.tcpListener.ClosedConnection(tcpListenerConn)
+
+		delete(tcpStack.connections, conn.ClientFlow.Address)
+		delete(tcpStack.connections, conn.ServerFlow.Address)
 	}
 
 	//

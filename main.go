@@ -39,9 +39,22 @@ func main() {
 	}
 
 	htl := NewHTTPTcpListener()
-	tsl := TCPPacketListener{NewTCPStack(htl)}
+	tcpStack := NewTCPStack(htl)
+	tsl := TCPPacketListener{tcpStack}
 	mpl.Add(&tsl)
 
+	//
+	// init debug monitor
+	//
+	var monitor *Monitor
+	if logDebug {
+		monitor = NewMonitor(tcpStack, htl)
+		go monitor.RunPeriodic()
+	}
+
+	//
+	// Determinate where to read from (stdin / file)
+	//
 	var r io.Reader
 
 	if len(flag.Args()) != 0 {
@@ -62,6 +75,9 @@ func main() {
 		r = os.Stdin
 	}
 
+	//
+	// Run
+	//
 	err := readStream(r, mpl)
 	if err != nil {
 		if err == INVALID_FILETYPE {
@@ -71,14 +87,16 @@ func main() {
 		}
 	}
 
-	/*
-		for _, v := range connmap {
-			/*
-			if v.HttpData != nil {
-				v.HttpData.Close()
-			}
-		}
-	*/
+	//
+	// Close
+	//
+	if monitor != nil {
+		monitor.Close()
+	}
+
+	for _, v := range htl.conns {
+		v.Close()
+	}
 
 	wg.Wait()
 }
