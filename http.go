@@ -141,8 +141,8 @@ func parseHttpResponse(httpData *HttpData, c chan []byte, addHeader bool) {
 			if err == io.ErrClosedPipe || err == io.EOF || err == io.ErrUnexpectedEOF {
 				return
 			}
-			fmt.Println("ERROR WHILE READING RESPONSE")
-			fmt.Println(err)
+
+			httpdebug("error parsing response", err)
 
 			continue
 		}
@@ -176,7 +176,7 @@ func parseHttpResponse(httpData *HttpData, c chan []byte, addHeader bool) {
 		defer resp.Body.Close()
 		buf, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			// FIXME
+			httpdebug("error while reading response body", err)
 			continue
 		}
 
@@ -255,7 +255,7 @@ func parseHttpRequest(httpData *HttpData, c chan []byte, addHeader bool) {
 				return
 			}
 
-			fmt.Println(err) // FIXME
+			httpdebug("error parsing request", err)
 			continue
 		}
 
@@ -288,7 +288,7 @@ func parseHttpRequest(httpData *HttpData, c chan []byte, addHeader bool) {
 		defer req.Body.Close()
 		buf, err := ioutil.ReadAll(req.Body)
 		if err != nil {
-			// FIXME
+			httpdebug("error while reading request body", err)
 			continue
 		}
 

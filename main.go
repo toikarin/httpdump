@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"syscall"
-	"os/exec"
 )
 
 var wg sync.WaitGroup
@@ -175,8 +175,8 @@ func main() {
 }
 
 func fatal(v ...interface{}) {
-   os.Stderr.WriteString(fmt.Sprintln(v...))
-   os.Exit(1)
+	os.Stderr.WriteString(fmt.Sprintln(v...))
+	os.Exit(1)
 }
 
 func maindebug(a ...interface{}) {

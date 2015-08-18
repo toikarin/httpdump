@@ -43,7 +43,7 @@ func NewIPv4FrameHeader(data []byte) (*IPv4FrameHeader, error) {
 		return nil, errors.New(fmt.Sprintf("required at least %d bytes of data.", IPV4_FRAME_HEADER_LENGTH))
 	}
 
-	if data[0] >> 4 != 4 {
+	if data[0]>>4 != 4 {
 		return nil, errors.New("invalid version number.")
 	}
 

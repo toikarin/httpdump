@@ -12,17 +12,6 @@ type FlowAddress struct {
 	DestinationPort    uint16
 }
 
-type TCPState uint8
-
-const (
-	TCP_STATE_CLIENT_SYN_SENT TCPState = iota
-	TCP_STATE_CLIENT_SYN_RECEIVED
-	TCP_STATE_CLIENT_ESTABLISHED
-
-	TCP_STATE_SERVER_SYN_RECEIVED
-	TCP_STATE_SERVER_ESTABLISHED
-)
-
 type Flow struct {
 	Address                FlowAddress
 	InitialSequenceNumber  uint32
@@ -143,7 +132,6 @@ func (tcpStack *TCPStack) NewPacket(networkFrame *interface{}, tcpFrame *TCPFram
 		conn, ok = tcpStack.connections[flowAddress]
 		if !ok {
 			// unknown connection, can happen for example when connection is opened before tcpdump starts.
-			//fmt.Println("UNKNOWN CONN")
 			return
 		}
 	}
@@ -159,11 +147,12 @@ func (tcpStack *TCPStack) NewPacket(networkFrame *interface{}, tcpFrame *TCPFram
 	} else {
 		//
 		// check packet order
-		// FIXME: add some kind of thresholds for max diff
+		// add some kind of thresholds for max diff?
 		//
 		if seq > from.ExpectedSequenceNumber {
+			//
 			// future packet
-
+			//
 			tcpstackdebug(fmt.Sprintf("tcp-debug: buffered future packet. Expected %d, got %d (diff: %d).", from.ExpectedSequenceNumber, seq, seq-from.ExpectedSequenceNumber))
 
 			_, ok := conn.Buffer[seq]
@@ -172,7 +161,9 @@ func (tcpStack *TCPStack) NewPacket(networkFrame *interface{}, tcpFrame *TCPFram
 			}
 			return
 		} else if seq < from.ExpectedSequenceNumber {
+			//
 			// past packet
+			//
 			tcpstackdebug(fmt.Sprintf("tcp-debug: ignored past packet. Expected %d, got %d (diff: %d).", from.ExpectedSequenceNumber, seq, from.ExpectedSequenceNumber-seq))
 			return
 		}
