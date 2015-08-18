@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type HttpData struct {
@@ -22,6 +23,7 @@ type HttpData struct {
 	respReader *io.PipeReader
 	respWriter *io.PipeWriter
 
+	wg            sync.WaitGroup
 	reqRespWriter *HttpRequestResponseWriter
 }
 
@@ -32,6 +34,9 @@ func (httpData *HttpData) Close() {
 	if httpData.respWriter != nil {
 		httpData.respWriter.Close()
 	}
+
+	httpData.wg.Wait()
+
 	if httpData.reqRespWriter != nil {
 		httpData.reqRespWriter.Close()
 	}
@@ -91,18 +96,18 @@ func (htl *HttpTCPListener) Data(conn TCPListenerConnection, data []byte, isClie
 		httpData.reqReader, httpData.reqWriter = io.Pipe()
 		httpData.respReader, httpData.respWriter = io.Pipe()
 		httpData.reqRespWriter = NewHttpRequestResponseWriter(os.Stdout, true)
-		wg.Add(2)
+		httpData.wg.Add(2)
 
 		//
 		// start goroutines
 		//
 		go httpData.reqRespWriter.Run()
 		go func() {
-			defer wg.Done()
+			defer httpData.wg.Done()
 			parseHttpRequest(httpData, httpData.reqRespWriter.ReqChan, true)
 		}()
 		go func() {
-			defer wg.Done()
+			defer httpData.wg.Done()
 			parseHttpResponse(httpData, httpData.reqRespWriter.RespChan, false)
 		}()
 

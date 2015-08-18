@@ -7,11 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"sync"
 	"syscall"
 )
 
-var wg sync.WaitGroup
 var payloadMaxLength int = 1024 * 2
 var logPackets = false
 var logDebug = false
@@ -154,8 +152,6 @@ func main() {
 	for _, v := range htl.conns {
 		v.Close()
 	}
-
-	wg.Wait()
 
 	if cmd != nil {
 		err = cmd.Wait()
