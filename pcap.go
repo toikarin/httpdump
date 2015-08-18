@@ -10,6 +10,9 @@ import (
 const (
 	PCAP_FILE_HEADER_LENGTH   = 24
 	PCAP_PACKET_HEADER_LENGTH = 16
+
+	PCAP_LINKTYPE_NULL = 0
+	PCAP_LINKTYPE_ETHERNET = 1
 )
 
 var INVALID_FILETYPE = errors.New("invalid magic number")

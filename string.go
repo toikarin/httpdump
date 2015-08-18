@@ -9,6 +9,16 @@ func binarystr(i int64) string {
 	return strconv.FormatInt(i, 2)
 }
 
+func (p PcapFileHeader) String() string {
+	return fmt.Sprintf(`[PcapFileHeader:
+  Version:        %d.%d
+  ThisZone:       %d
+  Sigfigs:        %d
+  SnapLength:     %d
+  Network:        %d
+]`, p.VersionMajor(), p.VersionMinor(), p.ThisZone(), p.Sigfigs(), p.SnapLength(), p.Network())
+}
+
 func (p PcapPacketHeader) String() string {
 	return fmt.Sprintf(`[PcapPacketHeader:
   Timestamp:      %s

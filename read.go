@@ -21,7 +21,7 @@ func readStream(r io.Reader, packetListener PacketListener) error {
 	}
 
 	for {
-		pcapPacketHeader, linkLayer, networkLayer, transportLayer, err := readPacket(r, pcapFileHeader.ByteOrder)
+		pcapPacketHeader, linkLayer, networkLayer, transportLayer, err := readPacket(r, pcapFileHeader)
 		if err != nil {
 			if err == io.EOF {
 				return nil
@@ -34,11 +34,11 @@ func readStream(r io.Reader, packetListener PacketListener) error {
 	}
 }
 
-func readPacket(r io.Reader, bo binary.ByteOrder) (pcapPacketHeader *PcapPacketHeader, linkLayer, networkLayer, transportLayer interface{}, err error) {
+func readPacket(r io.Reader, pcapFileHeader *PcapFileHeader) (pcapPacketHeader *PcapPacketHeader, linkLayer, networkLayer, transportLayer interface{}, err error) {
 	//
 	// Read pcap packet header
 	//
-	pcapPacketHeader, err = readPcapPacketHeader(r, bo)
+	pcapPacketHeader, err = readPcapPacketHeader(r, pcapFileHeader.ByteOrder)
 	if err != nil {
 		return
 	}
@@ -52,9 +52,9 @@ func readPacket(r io.Reader, bo binary.ByteOrder) (pcapPacketHeader *PcapPacketH
 	}
 
 	//
-	// Read ethernet packet
+	// Read packet
 	//
-	linkLayer, networkLayer, transportLayer, err = readEthernetPacket(packetData)
+	linkLayer, networkLayer, transportLayer, err = readLayerPacket(pcapFileHeader, packetData)
 	return
 }
 
@@ -76,39 +76,86 @@ func readPcapPacketHeader(r io.Reader, bo binary.ByteOrder) (*PcapPacketHeader, 
 	return NewPcapPacketHeader(buf, bo)
 }
 
-func readEthernetPacket(packetData []byte) (linkLayer, networkLayer, transportLayer interface{}, err error) {
+func readLayerPacket(pcapFileHeader *PcapFileHeader, packetData []byte) (linkLayer, networkLayer, transportLayer interface{}, err error) {
 	var protocol uint8
 	var payload []byte
+	var linkFrame interface{}
 	var networkFrame interface{}
+	var etherType uint16
 
 	//
-	// Read ethernet frame
+	// Read layer frame
 	//
-	ethernetFrame, err := NewEthernetFrame(packetData)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if ethernetFrame == nil {
-		return nil, nil, nil, nil
+	switch pcapFileHeader.Network() {
+	case PCAP_LINKTYPE_ETHERNET:
+		ethernetFrame, err := NewEthernetFrame(packetData)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if ethernetFrame == nil {
+			return nil, nil, nil, nil
+		}
+
+		etherType = ethernetFrame.Header.Type()
+		payload = ethernetFrame.Payload
+	case PCAP_LINKTYPE_NULL:
+		nullFrame, err := NewNullFrame(packetData, pcapFileHeader.ByteOrder)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if nullFrame == nil {
+			return nil, nil, nil, nil
+		}
+
+		linkFrame = nullFrame
+		payload = nullFrame.Payload
+
+		//
+		// Figure out network frame type
+		//
+		switch nullFrame.LinkType {
+		case NULL_FRAME_LINKTYPE_AF_INET:
+			etherType = ETHERTYPE_IPV4
+		default:
+			//
+			// ipv6 has multiple values, just try to parse it
+			//
+			header, _ := NewIPv6FrameHeader(nullFrame.Payload)
+			if header != nil {
+				etherType = ETHERTYPE_IPV6
+			} else {
+				//
+				// fallback to ipv4 checking
+				//
+				header, _ := NewIPv4FrameHeader(nullFrame.Payload)
+				if header != nil {
+					etherType = ETHERTYPE_IPV4
+				} else {
+					// unknown network layer
+					readdebug(fmt.Sprintf("Unsupported lookback of type %d.", nullFrame.LinkType))
+					return nullFrame, nil, nil, nil
+				}
+			}
+		}
 	}
 
 	//
 	// Read network frame
 	//
-	switch ethernetFrame.Header.Type() {
+	switch etherType {
 	case ETHERTYPE_IPV4:
-		ipv4Frame, err := NewIPv4Frame(ethernetFrame.Payload)
+		ipv4Frame, err := NewIPv4Frame(payload)
 		if err != nil {
-			return ethernetFrame, nil, nil, err
+			return linkFrame, nil, nil, err
 		}
 
 		networkFrame = ipv4Frame
 		payload = ipv4Frame.Payload
 		protocol = ipv4Frame.Header.Protocol()
 	case ETHERTYPE_IPV6:
-		ipv6Frame, err := NewIPv6Frame(ethernetFrame.Payload)
+		ipv6Frame, err := NewIPv6Frame(payload)
 		if err != nil {
-			return ethernetFrame, nil, nil, err
+			return linkFrame, nil, nil, err
 		}
 
 		networkFrame = ipv6Frame
@@ -117,8 +164,8 @@ func readEthernetPacket(packetData []byte) (linkLayer, networkLayer, transportLa
 	default:
 		// unknown network layer
 		readdebug(fmt.Sprintf("Unsupported network layer of type %d [%s].",
-			ethernetFrame.Header.Type(), EtherTypeToString(ethernetFrame.Header.Type())))
-		return ethernetFrame, nil, nil, nil
+			etherType, EtherTypeToString(etherType)))
+		return linkFrame, nil, nil, nil
 	}
 
 	//
@@ -127,18 +174,18 @@ func readEthernetPacket(packetData []byte) (linkLayer, networkLayer, transportLa
 	switch protocol {
 	case PROTOCOL_TCP:
 		tcpFrame, err := NewTCPFrame(payload)
-		return ethernetFrame, networkFrame, tcpFrame, err
+		return linkFrame, networkFrame, tcpFrame, err
 	case PROTOCOL_UDP:
 		udpFrame, err := NewUDPFrame(payload)
-		return ethernetFrame, networkFrame, udpFrame, err
+		return linkFrame, networkFrame, udpFrame, err
 	case PROTOCOL_ICMP:
 		icmpFrame, err := NewICMPFrame(payload)
-		return ethernetFrame, networkFrame, icmpFrame, err
+		return linkFrame, networkFrame, icmpFrame, err
 	default:
 		// unknown transport layer
 		readdebug(fmt.Sprintf("Unsupported transport layer of protocol %d [%s].",
 			protocol, IpProtocolToString(protocol)))
-		return ethernetFrame, networkFrame, nil, nil
+		return linkFrame, networkFrame, nil, nil
 	}
 }
 

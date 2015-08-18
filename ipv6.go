@@ -39,6 +39,10 @@ func NewIPv6FrameHeader(data []byte) (*IPv6FrameHeader, error) {
 		return nil, errors.New(fmt.Sprintf("required at least %d bytes of data.", IPV6_FRAME_HEADER_LENGTH))
 	}
 
+	if data[0] >> 4 != 6 {
+		return nil, errors.New("invalid version number.")
+	}
+
 	return &IPv6FrameHeader{data}, nil
 }
 
