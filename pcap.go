@@ -15,7 +15,7 @@ const (
 	PCAP_LINKTYPE_ETHERNET = 1
 )
 
-var INVALID_FILETYPE = errors.New("invalid magic number")
+var PCAP_INVALID_FILETYPE = errors.New("invalid magic number")
 
 type PcapFileHeader struct {
 	ByteOrder binary.ByteOrder
@@ -88,7 +88,7 @@ func NewPcapFileHeader(data []byte) (header *PcapFileHeader, err error) {
 	} else if data[3] == 0xA1 && data[2] == 0xB2 && data[1] == 0xC3 && data[0] == 0xD4 {
 		bo = binary.LittleEndian
 	} else {
-		return nil, INVALID_FILETYPE
+		return nil, PCAP_INVALID_FILETYPE
 	}
 
 	return &PcapFileHeader{

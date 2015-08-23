@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"go-libpcapng"
 	"io"
 	"os"
 	"os/exec"
@@ -135,8 +136,8 @@ func main() {
 	//
 	err := readStream(r, mpl)
 	if err != nil {
-		if err == INVALID_FILETYPE {
-			fmt.Println("error: not pcap file.")
+		if err == PCAP_INVALID_FILETYPE || err == pcapng.PCAPNG_INVALID_HEADER {
+			fmt.Println("error: not pcap/pcap-ng file.")
 		} else {
 			fmt.Println("unknown error:", err)
 		}
