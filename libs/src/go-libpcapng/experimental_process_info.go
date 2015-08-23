@@ -1,26 +1,11 @@
 package pcapng
 
-import (
-	"errors"
-	"fmt"
-)
-
-const (
-	PCAPNG_BLOCK_BODY_LEN_PROCESS_INFORMATION = 4
-)
-
 type ProcessInformationBlock struct {
 	totalLength uint32
 	ProcessId   uint32
 
-	RawOptions *Options
+	RawOptions *RawOptions
 	Options    *ProcessInformationOptions
-}
-
-type ProcessInformationOptions struct {
-	Comment     *string
-	ProcessName *string
-	Unsupported map[OptionCode][]OptionValue
 }
 
 func (ProcessInformationBlock) BlockType() uint32 {
@@ -35,12 +20,26 @@ func (pib ProcessInformationBlock) HasOptions() bool {
 	return pib.Options != nil
 }
 
-func (s *Stream) newProcessInformationBlock(body []byte, totalLength uint32) (*ProcessInformationBlock, error) {
-	if len(body) < PCAPNG_BLOCK_BODY_LEN_PROCESS_INFORMATION {
-		return nil, errors.New(fmt.Sprintf("body requires at least %d bytes of data.", PCAPNG_BLOCK_BODY_LEN_PROCESS_INFORMATION))
-	}
+type ProcessInformationOptions struct {
+	Comment     *string
+	ProcessName *string
+	Unsupported RawOptions
+}
 
-	rawOpts, err := ParseOptions2(s.sectionHeader.ByteOrder, body[4:])
+//
+// parsing
+//
+
+func (s *Stream) newProcessInformationBlock(body []byte, totalLength uint32) (*ProcessInformationBlock, error) {
+	//
+	// parse fields
+	//
+	pid := s.sectionHeader.ByteOrder.Uint32(body[0:4])
+
+	//
+	// parse options
+	//
+	rawOpts, err := s.parseOptions(body[4:])
 	if err != nil {
 		return nil, err
 	}
@@ -52,21 +51,21 @@ func (s *Stream) newProcessInformationBlock(body []byte, totalLength uint32) (*P
 
 	return &ProcessInformationBlock{
 		totalLength: totalLength,
-		ProcessId:   s.sectionHeader.ByteOrder.Uint32(body[0:4]),
+		ProcessId:   pid,
 		RawOptions:  rawOpts,
 		Options:     opts,
 	}, nil
 }
 
-func (s *Stream) parseProcessInformationOptions(rawOpts *Options) (*ProcessInformationOptions, error) {
+func (s *Stream) parseProcessInformationOptions(rawOpts *RawOptions) (*ProcessInformationOptions, error) {
 	if rawOpts == nil {
 		return nil, nil
 	}
 
 	opts := &ProcessInformationOptions{}
-	opts.Unsupported = make(map[OptionCode][]OptionValue)
+	opts.Unsupported = make(RawOptions)
 
-	for k, va := range rawOpts.Values {
+	for k, va := range *rawOpts {
 		switch k {
 		case OPTION_COMMENT:
 			v := StringOptionValue(va[0])

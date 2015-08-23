@@ -2,14 +2,11 @@ package pcapng
 
 import (
 	"encoding/binary"
-	"errors"
-	"fmt"
 	"io"
 )
 
 const (
-	PCAPNG_BLOCK_BODY_LEN_NAME_RESOLUTION = 4
-	PCAPNG_RECORD_CODE_END_OF_RECORD      = 0
+	PCAPNG_RECORD_CODE_END_OF_RECORD = 0
 )
 
 type Record struct {
@@ -48,7 +45,7 @@ type NameResolutionBlock struct {
 
 	IPv4Records []IPv4Record
 	IPv6Records []IPv6Record
-	RawOptions  *Options
+	RawOptions  *RawOptions
 	Options     *NameResolutionOptions
 }
 
@@ -59,7 +56,7 @@ type NameResolutionOptions struct {
 	IPv4Address *IPv4Address
 	IPv6Address *IPv6Address
 
-	Unsupported map[OptionCode][]OptionValue
+	Unsupported RawOptions
 }
 
 func (NameResolutionBlock) BlockType() uint32 {
@@ -83,10 +80,6 @@ func (nrb NameResolutionBlock) OptionComment() string {
 }
 
 func (s *Stream) newNameResolutionBlock(body []byte, totalLength uint32) (*NameResolutionBlock, error) {
-	if len(body) < PCAPNG_BLOCK_BODY_LEN_NAME_RESOLUTION {
-		return nil, errors.New(fmt.Sprintf("body requires at least %d bytes of data.", PCAPNG_BLOCK_BODY_LEN_NAME_RESOLUTION))
-	}
-
 	byteOrder := s.sectionHeader.ByteOrder
 
 	curData := body
@@ -150,7 +143,7 @@ func (s *Stream) newNameResolutionBlock(body []byte, totalLength uint32) (*NameR
 	//
 	// Read options
 	//
-	rawOpts, err := ParseOptions2(byteOrder, curData)
+	rawOpts, err := s.parseOptions(curData)
 	if err != nil {
 		return nil, err
 	}
@@ -169,15 +162,15 @@ func (s *Stream) newNameResolutionBlock(body []byte, totalLength uint32) (*NameR
 	}, nil
 }
 
-func (s *Stream) parseNameResolutionOptions(rawOpts *Options) (*NameResolutionOptions, error) {
+func (s *Stream) parseNameResolutionOptions(rawOpts *RawOptions) (*NameResolutionOptions, error) {
 	if rawOpts == nil {
 		return nil, nil
 	}
 
 	opts := &NameResolutionOptions{}
-	opts.Unsupported = make(map[OptionCode][]OptionValue)
+	opts.Unsupported = make(RawOptions)
 
-	for k, va := range rawOpts.Values {
+	for k, va := range *rawOpts {
 		switch k {
 		case OPTION_COMMENT:
 			val := StringOptionValue(va[0])

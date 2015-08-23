@@ -81,18 +81,21 @@ const (
 	OPTION_EXP_EPB_EFFECTIVE_PIB_INDEX = 0x8003
 )
 
-type Option struct {
-	Code  uint16
-	Value []byte
+type OptionCode uint16
+type OptionValue []byte
+type RawOptions map[OptionCode][]OptionValue
+
+func (s *Stream) parseOptions(data []byte) (*RawOptions, error) {
+	return parseOptions(data, s.sectionHeader.ByteOrder)
 }
 
-func ParseOptions(bo binary.ByteOrder, data []byte) ([]Option, error) {
+func parseOptions(data []byte, byteOrder binary.ByteOrder) (*RawOptions, error) {
 	if len(data) == 0 {
 		return nil, nil
 	}
 
+	var options *RawOptions
 	curData := data
-	retval := make([]Option, 0)
 
 	for {
 		//
@@ -102,8 +105,8 @@ func ParseOptions(bo binary.ByteOrder, data []byte) ([]Option, error) {
 			return nil, io.ErrUnexpectedEOF
 		}
 
-		optionCode := bo.Uint16(curData[:2])
-		optionLen := bo.Uint16(curData[2:4])
+		optionCode := OptionCode(byteOrder.Uint16(curData[:2]))
+		optionLen := byteOrder.Uint16(curData[2:4])
 
 		if optionCode == OPTION_CODE_END_OF_OPT {
 			break
@@ -119,11 +122,24 @@ func ParseOptions(bo binary.ByteOrder, data []byte) ([]Option, error) {
 		}
 		optionValue := curData[:optionLen]
 
-		retval = append(retval, Option{optionCode, optionValue})
+		//
+		// check if this is new option
+		//
+		if options == nil {
+			v := make(RawOptions)
+			options = &v
+		}
+		optionValueArray, ok := (*options)[optionCode]
+		if !ok {
+			optionValueArray = make([]OptionValue, 0)
+			(*options)[optionCode] = optionValueArray
+		}
+
+		(*options)[optionCode] = append(optionValueArray, optionValue)
 
 		boundary := alignUint16(optionLen)
 		curData = curData[boundary:]
 	}
 
-	return retval, nil
+	return options, nil
 }

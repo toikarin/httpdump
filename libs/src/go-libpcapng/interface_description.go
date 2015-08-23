@@ -1,13 +1,7 @@
 package pcapng
 
-import (
-	"errors"
-	"fmt"
-)
-
 const (
-	PCAPNG_BLOCK_BODY_LEN_INTERFACE_DESC = 8
-	DEFAULT_TIMESTAMP_RESOLUTION         = TimestampResolution(6)
+	DEFAULT_TIMESTAMP_RESOLUTION = TimestampResolution(6)
 )
 
 //
@@ -20,7 +14,7 @@ type InterfaceDescriptionBlock struct {
 	LinkType   uint16
 	SnapLength uint32
 
-	RawOptions *Options
+	RawOptions *RawOptions
 	Options    *InterfaceDescriptionOptions
 }
 
@@ -77,7 +71,7 @@ type InterfaceDescriptionOptions struct {
 	FCSLength           *uint8
 	TimestampOffset     *uint64
 
-	Unsupported map[OptionCode][]OptionValue
+	Unsupported RawOptions
 }
 
 type CaptureFilter struct {
@@ -94,17 +88,23 @@ func (tsr TimestampResolution) Value() uint8 {
 	return uint8(tsr & 0x7F)
 }
 
-func (s *Stream) newInterfaceDescriptionBlock(body []byte, totalLength uint32) (*InterfaceDescriptionBlock, error) {
-	if len(body) < PCAPNG_BLOCK_BODY_LEN_INTERFACE_DESC {
-		return nil, errors.New(fmt.Sprintf("body requires at least %d bytes of data.", PCAPNG_BLOCK_BODY_LEN_INTERFACE_DESC))
-	}
+//
+// parsing
+//
 
+func (s *Stream) newInterfaceDescriptionBlock(body []byte, totalLength uint32) (*InterfaceDescriptionBlock, error) {
 	byteOrder := s.sectionHeader.ByteOrder
+
+	//
+	// parse fields
+	//
+	linkType := byteOrder.Uint16(body[0:2])
+	snapLength := byteOrder.Uint32(body[4:8])
 
 	//
 	// parse options
 	//
-	rawOpts, err := ParseOptions2(byteOrder, body[8:])
+	rawOpts, err := s.parseOptions(body[8:])
 	if err != nil {
 		return nil, err
 	}
@@ -116,22 +116,22 @@ func (s *Stream) newInterfaceDescriptionBlock(body []byte, totalLength uint32) (
 
 	return &InterfaceDescriptionBlock{
 		totalLength: totalLength,
-		LinkType:    byteOrder.Uint16(body[0:2]),
-		SnapLength:  byteOrder.Uint32(body[4:8]),
+		LinkType:    linkType,
+		SnapLength:  snapLength,
 		RawOptions:  rawOpts,
 		Options:     opts,
 	}, nil
 }
 
-func (s *Stream) parseInterfaceDescriptionOptions(rawOpts *Options) (*InterfaceDescriptionOptions, error) {
+func (s *Stream) parseInterfaceDescriptionOptions(rawOpts *RawOptions) (*InterfaceDescriptionOptions, error) {
 	if rawOpts == nil {
 		return nil, nil
 	}
 
 	opts := &InterfaceDescriptionOptions{}
-	opts.Unsupported = make(map[OptionCode][]OptionValue)
+	opts.Unsupported = make(RawOptions)
 
-	for k, va := range rawOpts.Values {
+	for k, va := range *rawOpts {
 		switch k {
 		case OPTION_COMMENT:
 			v := StringOptionValue(va[0])

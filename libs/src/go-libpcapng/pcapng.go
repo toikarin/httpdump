@@ -174,24 +174,6 @@ func alignUint32(i uint32) uint32 {
 	return uint32(math.Ceil(float64(i)/4)) * 4
 }
 
-func ByteArrayOption(o *Options, c OptionCode) []byte {
-	if o == nil {
-		return nil
-	}
-
-	values := o.Values[c]
-
-	if len(values) == 0 {
-		return nil
-	}
-
-	return values[0]
-}
-
-func StringOption(o *Options, c OptionCode) string {
-	return StringOptionValue(ByteArrayOption(o, c))
-}
-
 func StringOptionValue(value []byte) string {
 	if value == nil {
 		return ""

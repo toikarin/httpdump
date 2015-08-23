@@ -19,7 +19,7 @@ type PacketBlock struct {
 	PacketLength   uint32
 	PacketData     []byte
 
-	RawOptions *Options
+	RawOptions *RawOptions
 	Options    *PacketBlockOptions
 }
 
@@ -28,7 +28,7 @@ type PacketBlockOptions struct {
 	Flags   *PacketFlags
 	Hash    *PacketHash
 
-	Unsupported map[OptionCode][]OptionValue
+	Unsupported RawOptions
 }
 
 func (PacketBlock) BlockType() uint32 {
@@ -61,7 +61,7 @@ func (s *Stream) newPacketBlock(body []byte, totalLength uint32) (*PacketBlock, 
 	//
 	// read opts
 	//
-	rawOpts, err := ParseOptions2(byteOrder, body[20+alignedCapLen:])
+	rawOpts, err := s.parseOptions(body[20+alignedCapLen:])
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func (s *Stream) newPacketBlock(body []byte, totalLength uint32) (*PacketBlock, 
 	}, nil
 }
 
-func (s *Stream) parsePacketBlockOptions(rawOpts *Options) (*PacketBlockOptions, error) {
+func (s *Stream) parsePacketBlockOptions(rawOpts *RawOptions) (*PacketBlockOptions, error) {
 	if rawOpts == nil {
 		return nil, nil
 	}
@@ -93,7 +93,7 @@ func (s *Stream) parsePacketBlockOptions(rawOpts *Options) (*PacketBlockOptions,
 	opts := &PacketBlockOptions{}
 	opts.Unsupported = make(map[OptionCode][]OptionValue)
 
-	for k, va := range rawOpts.Values {
+	for k, va := range *rawOpts {
 		switch k {
 		case OPTION_COMMENT:
 			val := StringOptionValue(va[0])

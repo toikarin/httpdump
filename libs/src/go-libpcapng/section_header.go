@@ -3,7 +3,6 @@ package pcapng
 import (
 	"encoding/binary"
 	"errors"
-	"io"
 )
 
 const (
@@ -17,7 +16,7 @@ type SectionHeaderBlock struct {
 	VersionMajor  uint16
 	VersionMinor  uint16
 	SectionLength int64
-	RawOptions    *Options
+	RawOptions    *RawOptions
 	Options       *SectionHeaderOptions
 }
 
@@ -82,8 +81,8 @@ func (shb SectionHeaderBlock) OptionUserApplication() string {
 	return *shb.Options.UserApplication
 }
 
-func ReadSectionHeaderBlock(r io.Reader) (header *SectionHeaderBlock, err error) {
-	data, err := read(r, 8)
+func (s *Stream) readSectionHeaderBlock() (header *SectionHeaderBlock, err error) {
+	data, err := s.read(8)
 	if err != nil {
 		return nil, err
 	}
@@ -95,11 +94,11 @@ func ReadSectionHeaderBlock(r io.Reader) (header *SectionHeaderBlock, err error)
 		return nil, PCAPNG_INVALID_HEADER
 	}
 
-	return readSectionHeaderBlock(r, data)
+	return s.readSectionHeaderBlockBody(data)
 }
 
-func readSectionHeaderBlock(r io.Reader, headerData []byte) (header *SectionHeaderBlock, err error) {
-	bodyData, err := read(r, 24-8)
+func (s *Stream) readSectionHeaderBlockBody(headerData []byte) (header *SectionHeaderBlock, err error) {
+	bodyData, err := s.read(24 - 8)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +121,7 @@ func readSectionHeaderBlock(r io.Reader, headerData []byte) (header *SectionHead
 	//
 	totalLength := byteOrder.Uint32(headerData[4:8])
 	optsLen := totalLength - 28
-	rawOpts, err := readOptions(r, byteOrder, optsLen)
+	rawOpts, err := s.readOptions(optsLen)
 	if err != nil {
 		return nil, err
 	}
@@ -135,12 +134,12 @@ func readSectionHeaderBlock(r io.Reader, headerData []byte) (header *SectionHead
 	//
 	// Read last block total length
 	//
-	_, err = readExactly(r, 4)
+	_, err = s.readExactly(4)
 	if err != nil {
 		return nil, err
 	}
 
-	return &SectionHeaderBlock{
+	retval := &SectionHeaderBlock{
 		totalLength:   totalLength,
 		ByteOrder:     byteOrder,
 		VersionMajor:  byteOrder.Uint16(bodyData[4:6]),
@@ -148,18 +147,21 @@ func readSectionHeaderBlock(r io.Reader, headerData []byte) (header *SectionHead
 		SectionLength: int64(byteOrder.Uint64(bodyData[8:16])),
 		RawOptions:    rawOpts,
 		Options:       opts,
-	}, nil
+	}
+
+	s.sectionHeader = retval
+	return retval, nil
 }
 
-func parseSectionHeaderOptions(rawOpts *Options) (*SectionHeaderOptions, error) {
+func parseSectionHeaderOptions(rawOpts *RawOptions) (*SectionHeaderOptions, error) {
 	if rawOpts == nil {
 		return nil, nil
 	}
 
 	opts := &SectionHeaderOptions{}
-	opts.Unsupported = make(map[OptionCode][]OptionValue)
+	opts.Unsupported = make(RawOptions)
 
-	for k, va := range rawOpts.Values {
+	for k, va := range *rawOpts {
 		switch k {
 		case OPTION_COMMENT:
 			val := StringOptionValue(va[0])

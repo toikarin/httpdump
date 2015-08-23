@@ -1,29 +1,23 @@
 package pcapng
 
-import (
-	"encoding/binary"
-	"errors"
-	"fmt"
-)
-
-const (
-	PCAPNG_BLOCK_BODY_LEN_SIMPLE_PACKET = 4
-)
-
 type SimplePacketBlock struct {
-	Block
+	totalLength  uint32
 	PacketLength uint32
 	PacketData   []byte
 }
 
-func NewSimplePacketBlock(byteOrder binary.ByteOrder, blockHeader *Block, body []byte) (*SimplePacketBlock, error) {
-	if len(body) < PCAPNG_BLOCK_BODY_LEN_SIMPLE_PACKET {
-		return nil, errors.New(fmt.Sprintf("body requires at least %d bytes of data.", PCAPNG_BLOCK_BODY_LEN_SIMPLE_PACKET))
-	}
+func (SimplePacketBlock) BlockType() uint32 {
+	return BLOCK_TYPE_SIMPLE_PACKET
+}
 
+func (spb SimplePacketBlock) TotalLength() uint32 {
+	return spb.totalLength
+}
+
+func (s *Stream) newSimplePacketBlock(body []byte, totalLength uint32) (*SimplePacketBlock, error) {
 	return &SimplePacketBlock{
-		Block:        *blockHeader,
-		PacketLength: byteOrder.Uint32(body[0:4]),
+		totalLength:  totalLength,
+		PacketLength: s.sectionHeader.ByteOrder.Uint32(body[0:4]),
 		PacketData:   body[4:],
 	}, nil
 }

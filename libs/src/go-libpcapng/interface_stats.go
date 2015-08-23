@@ -1,13 +1,7 @@
 package pcapng
 
 import (
-	"errors"
-	"fmt"
 	"time"
-)
-
-const (
-	PCAPNG_BLOCK_BODY_LEN_INTERFACE_STATS = 12
 )
 
 type InterfaceStatisticsBlock struct {
@@ -16,7 +10,7 @@ type InterfaceStatisticsBlock struct {
 	Interface   *InterfaceDescriptionBlock
 	Timestamp   time.Time
 
-	RawOptions *Options
+	RawOptions *RawOptions
 	Options    *InterfaceStatisticsOptions
 }
 
@@ -42,49 +36,10 @@ type InterfaceStatisticsOptions struct {
 	OsDrop       *uint16
 	UsrDeliv     *uint16
 
-	Unsupported map[OptionCode][]OptionValue
-}
-
-func uint16opt(s *Stream, o *Options, oc OptionCode) (*uint16, error) {
-	var retval *uint16
-
-	valarray, ok := o.Values[oc]
-	if ok {
-		val := valarray[0]
-
-		if len(val) != 8 {
-			return nil, errors.New("corrupted value")
-		}
-
-		ref := s.sectionHeader.ByteOrder.Uint16(val)
-		retval = &ref
-	}
-
-	return retval, nil
-}
-
-func (s *Stream) timestampValue(o *Options, oc OptionCode, ifdb *InterfaceDescriptionBlock) (*time.Time, error) {
-	val, ok := o.Values[oc]
-	if ok {
-		if len(val[0]) != 8 {
-			return nil, errors.New("corrupted value")
-		}
-
-		high := s.sectionHeader.ByteOrder.Uint32(val[0][0:4])
-		low := s.sectionHeader.ByteOrder.Uint32(val[0][4:8])
-
-		val := timestamp(high, low, ifdb)
-		return &val, nil
-	}
-
-	return nil, nil
+	Unsupported RawOptions
 }
 
 func (s *Stream) newInterfaceStatisticsBlock(body []byte, totalLength uint32) (*InterfaceStatisticsBlock, error) {
-	if len(body) < PCAPNG_BLOCK_BODY_LEN_INTERFACE_STATS {
-		return nil, errors.New(fmt.Sprintf("body requires at least %d bytes of data.", PCAPNG_BLOCK_BODY_LEN_INTERFACE_STATS))
-	}
-
 	//
 	// parse fields
 	//
@@ -104,7 +59,7 @@ func (s *Stream) newInterfaceStatisticsBlock(body []byte, totalLength uint32) (*
 	//
 	// parse options
 	//
-	rawOpts, err := ParseOptions2(byteOrder, body[12:])
+	rawOpts, err := s.parseOptions(body[12:])
 	if err != nil {
 		return nil, err
 	}
@@ -124,15 +79,15 @@ func (s *Stream) newInterfaceStatisticsBlock(body []byte, totalLength uint32) (*
 	}, nil
 }
 
-func (s *Stream) parseInterfaceStatisticsOptions(rawOpts *Options, ifdb *InterfaceDescriptionBlock) (*InterfaceStatisticsOptions, error) {
+func (s *Stream) parseInterfaceStatisticsOptions(rawOpts *RawOptions, ifdb *InterfaceDescriptionBlock) (*InterfaceStatisticsOptions, error) {
 	if rawOpts == nil {
 		return nil, nil
 	}
 
 	opts := &InterfaceStatisticsOptions{}
-	opts.Unsupported = make(map[OptionCode][]OptionValue)
+	opts.Unsupported = make(RawOptions)
 
-	for k, va := range rawOpts.Values {
+	for k, va := range *rawOpts {
 		switch k {
 		case OPTION_COMMENT:
 			val := StringOptionValue(va[0])
