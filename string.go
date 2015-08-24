@@ -9,24 +9,6 @@ func binarystr(i int64) string {
 	return strconv.FormatInt(i, 2)
 }
 
-func (p PcapFileHeader) String() string {
-	return fmt.Sprintf(`[PcapFileHeader:
-  Version:        %d.%d
-  ThisZone:       %d
-  Sigfigs:        %d
-  SnapLength:     %d
-  Network:        %d
-]`, p.VersionMajor(), p.VersionMinor(), p.ThisZone(), p.Sigfigs(), p.SnapLength(), p.Network())
-}
-
-func (p PcapPacketHeader) String() string {
-	return fmt.Sprintf(`[PcapPacketHeader:
-  Timestamp:      %s
-  OriginalLength: %d
-  IncludeLength:  %d
-]`, p.Timestamp(), p.OriginalLength(), p.IncludeLength())
-}
-
 func MacString(mac []byte) string {
 	return fmt.Sprintf("%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5])
 }

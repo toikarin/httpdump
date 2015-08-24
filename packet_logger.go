@@ -3,20 +3,21 @@ package main
 import (
 	"fmt"
 	"io"
+	"time"
 )
 
 type LoggingPacketListener struct {
 	writer io.Writer
 }
 
-func (l LoggingPacketListener) NewPacket(fileHeader PcapFileHeader, pcapPacketHeader PcapPacketHeader, linkLayer, networkLayer, transportLayer interface{}) {
+func (l LoggingPacketListener) NewPacket(timestamp time.Time, linkLayer, networkLayer, transportLayer interface{}) {
 	if transportLayer != nil {
 		switch transportLayer.(type) {
 		case *TCPFrame:
 			tcpFrame := *transportLayer.(*TCPFrame)
 
 			io.WriteString(l.writer, fmt.Sprintf("[%-37s] %15s:%-5d -> %15s:%-5d: %s, TCP [%7s], SN: %d, AN: %d, payload len: %d\n",
-				pcapPacketHeader.Timestamp(),
+				timestamp,
 				sourceAddressToString(networkLayer), tcpFrame.Header.SourcePort(),
 				destinationAddressToString(networkLayer), tcpFrame.Header.DestinationPort(),
 				networkTypeString(networkLayer), flagString(*tcpFrame.Header),
@@ -29,7 +30,7 @@ func (l LoggingPacketListener) NewPacket(fileHeader PcapFileHeader, pcapPacketHe
 			icmpFrame := *transportLayer.(*ICMPFrame)
 
 			io.WriteString(l.writer, fmt.Sprintf("[%-37s] %15s -> %15s: ICMP Type %d\n",
-				pcapPacketHeader.Timestamp(),
+				timestamp,
 				sourceAddressToString(networkLayer),
 				destinationAddressToString(networkLayer),
 				icmpFrame.Header.Type()))
@@ -37,7 +38,7 @@ func (l LoggingPacketListener) NewPacket(fileHeader PcapFileHeader, pcapPacketHe
 			udpFrame := *transportLayer.(*UDPFrame)
 
 			io.WriteString(l.writer, fmt.Sprintf("[%-37s] %15s:%-5d -> %15s:%-5d: %s, UDP, payload len: %d\n",
-				pcapPacketHeader.Timestamp(),
+				timestamp,
 				sourceAddressToString(networkLayer), udpFrame.Header.SourcePort(),
 				destinationAddressToString(networkLayer), udpFrame.Header.DestinationPort(),
 				networkTypeString(networkLayer),

@@ -1,82 +1,78 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
+	"go-libpcap"
+	"go-libpcapng"
 	"io"
+	"time"
 )
 
 type PacketListener interface {
-	NewPacket(fileHeader PcapFileHeader, ipacketHeader PcapPacketHeader, linkLayer, networkLayer, transportLayer interface{})
+	NewPacket(timestamp time.Time, linkLayer, networkLayer, transportLayer interface{})
 }
 
 func readStream(r io.Reader, packetListener PacketListener) error {
-	pcapFileHeader, err := readPcapFileHeader(r)
+	data, err := readExactly(r, 4)
 	if err != nil {
-		if err == io.EOF {
-			return nil
-		}
-
 		return err
 	}
 
-	for {
-		pcapPacketHeader, linkLayer, networkLayer, transportLayer, err := readPacket(r, pcapFileHeader)
-		if err != nil {
-			if err == io.EOF {
-				return nil
+	// put data back to reader
+	r = io.MultiReader(bytes.NewReader(data), r)
+
+	if pcapng.IsPcapngStream(data) {
+		readdebug("pcapng format detected")
+
+		stream := pcapng.NewStream(r)
+
+		for {
+			block, err := stream.NextBlock()
+			if err != nil {
+				return err
 			}
 
+			switch block.(type) {
+			case *pcapng.EnhancedPacketBlock:
+				epb := block.(*pcapng.EnhancedPacketBlock)
+
+				linkLayer, networkLayer, transportLayer, err := readLayerPacket(uint32(epb.Interface.LinkType), stream.ByteOrder(), epb.PacketData)
+				if err != nil {
+					return err
+				}
+
+				packetListener.NewPacket(epb.Timestamp, linkLayer, networkLayer, transportLayer)
+			}
+		}
+	} else if pcap.IsPcapStream(data) {
+		readdebug("pcap format detected")
+
+		stream, fileHeader, err := pcap.NewStream(r)
+		if err != nil {
 			return err
 		}
 
-		packetListener.NewPacket(*pcapFileHeader, *pcapPacketHeader, linkLayer, networkLayer, transportLayer)
+		for {
+			packetHeader, data, err := stream.NextPacket()
+			if err != nil {
+				return err
+			}
+
+			linkLayer, networkLayer, transportLayer, err := readLayerPacket(fileHeader.Network(), fileHeader.ByteOrder, data)
+			if err != nil {
+				return err
+			}
+
+			packetListener.NewPacket(packetHeader.Timestamp(), linkLayer, networkLayer, transportLayer)
+		}
 	}
+
+	return nil
 }
 
-func readPacket(r io.Reader, pcapFileHeader *PcapFileHeader) (pcapPacketHeader *PcapPacketHeader, linkLayer, networkLayer, transportLayer interface{}, err error) {
-	//
-	// Read pcap packet header
-	//
-	pcapPacketHeader, err = readPcapPacketHeader(r, pcapFileHeader.ByteOrder)
-	if err != nil {
-		return
-	}
-
-	//
-	// Read rest of the packet
-	//
-	packetData, err := read(r, pcapPacketHeader.IncludeLength())
-	if err != nil {
-		return
-	}
-
-	//
-	// Read packet
-	//
-	linkLayer, networkLayer, transportLayer, err = readLayerPacket(pcapFileHeader, packetData)
-	return
-}
-
-func readPcapFileHeader(r io.Reader) (header *PcapFileHeader, err error) {
-	buf, err := read(r, PCAP_FILE_HEADER_LENGTH)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewPcapFileHeader(buf)
-}
-
-func readPcapPacketHeader(r io.Reader, bo binary.ByteOrder) (*PcapPacketHeader, error) {
-	buf, err := read(r, PCAP_PACKET_HEADER_LENGTH)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewPcapPacketHeader(buf, bo)
-}
-
-func readLayerPacket(pcapFileHeader *PcapFileHeader, packetData []byte) (linkLayer, networkLayer, transportLayer interface{}, err error) {
+func readLayerPacket(network uint32, byteOrder binary.ByteOrder, packetData []byte) (linkLayer, networkLayer, transportLayer interface{}, err error) {
 	var protocol uint8
 	var payload []byte
 	var linkFrame interface{}
@@ -86,8 +82,8 @@ func readLayerPacket(pcapFileHeader *PcapFileHeader, packetData []byte) (linkLay
 	//
 	// Read layer frame
 	//
-	switch pcapFileHeader.Network() {
-	case PCAP_LINKTYPE_ETHERNET:
+	switch network {
+	case pcap.LINKTYPE_ETHERNET:
 		ethernetFrame, err := NewEthernetFrame(packetData)
 		if err != nil {
 			return nil, nil, nil, err
@@ -98,8 +94,8 @@ func readLayerPacket(pcapFileHeader *PcapFileHeader, packetData []byte) (linkLay
 
 		etherType = ethernetFrame.Header.Type()
 		payload = ethernetFrame.Payload
-	case PCAP_LINKTYPE_NULL:
-		nullFrame, err := NewNullFrame(packetData, pcapFileHeader.ByteOrder)
+	case pcap.LINKTYPE_NULL:
+		nullFrame, err := NewNullFrame(packetData, byteOrder)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -192,14 +188,23 @@ func readLayerPacket(pcapFileHeader *PcapFileHeader, packetData []byte) (linkLay
 	}
 }
 
-func read(r io.Reader, len uint32) (data []byte, err error) {
-	buf := make([]byte, len)
+func read(r io.Reader, n uint32) (data []byte, err error) {
+	buf := make([]byte, n)
 
 	if _, err = io.ReadFull(r, buf); err != nil {
 		return nil, err
 	}
 
 	return buf, nil
+}
+
+func readExactly(r io.Reader, n uint32) (data []byte, err error) {
+	buf, err := read(r, n)
+	if err == io.EOF {
+		return nil, io.ErrUnexpectedEOF
+	}
+
+	return buf, err
 }
 
 func readdebug(a ...interface{}) {
