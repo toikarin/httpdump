@@ -93,7 +93,7 @@ func (s *Stream) readSectionHeaderBlock() (header *SectionHeaderBlock, err error
 	//
 	// check block type
 	//
-	if data[0] != 0x0A || data[1] != 0x0D || data[2] != 0x0D || data[3] != 0x0A {
+	if !IsPcapngStream(data[:4]) {
 		return nil, PCAPNG_INVALID_HEADER
 	}
 

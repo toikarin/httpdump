@@ -136,9 +136,14 @@ func main() {
 	//
 	err := readStream(r, mpl)
 	if err != nil {
-		if err == PCAP_INVALID_FILETYPE || err == pcapng.PCAPNG_INVALID_HEADER {
+		switch err {
+		case io.EOF:
+			// OK
+		case PCAP_INVALID_FILETYPE:
+			fallthrough
+		case pcapng.PCAPNG_INVALID_HEADER:
 			fmt.Println("error: not pcap/pcap-ng file.")
-		} else {
+		default:
 			fmt.Println("unknown error:", err)
 		}
 	}

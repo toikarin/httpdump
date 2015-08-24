@@ -1,7 +1,7 @@
 package main
 
 import (
-	//	"encoding/binary"
+	"bytes"
 	"fmt"
 	"go-libpcapng"
 	"io"
@@ -12,25 +12,37 @@ type PacketListener interface {
 }
 
 func readStream(r io.Reader, packetListener PacketListener) error {
-	stream := pcapng.NewStream(r)
+	data, err := readExactly(r, 4)
+	if err != nil {
+		return err
+	}
 
-	for {
-		block, err := stream.NextBlock()
-		if err != nil {
-			if err == io.EOF {
-				return nil
+	// put data back to reader
+	r = io.MultiReader(bytes.NewReader(data), r)
+
+	if pcapng.IsPcapngStream(data) {
+		stream := pcapng.NewStream(r)
+
+		for {
+			block, err := stream.NextBlock()
+			if err != nil {
+				return err
 			}
-			return err
-		}
 
-		fmt.Println(block)
+			fmt.Println(block)
 
-		switch block.(type) {
-		case *pcapng.InterfaceStatisticsBlock:
+			switch block.(type) {
+			case *pcapng.InterfaceStatisticsBlock:
+			}
 		}
 	}
 
 	return nil
+}
+
+func IsPcapStream(data []byte) bool {
+	return (data[0] == 0xa1 && data[1] == 0xb2 && data[2] == 0xc3 && data[3] == 0xd4) ||
+		(data[3] == 0xa1 && data[2] == 0xb2 && data[1] == 0xc3 && data[0] == 0xd4)
 }
 
 /*
@@ -457,6 +469,7 @@ func readLayerPacket(pcapFileHeader *PcapFileHeader, packetData []byte) (linkLay
 	}
 }
 
+*/
 func read(r io.Reader, n uint32) (data []byte, err error) {
 	buf := make([]byte, n)
 
@@ -467,13 +480,15 @@ func read(r io.Reader, n uint32) (data []byte, err error) {
 	return buf, nil
 }
 
-/*
 func readExactly(r io.Reader, n uint32) (data []byte, err error) {
 	buf, err := read(r, n)
 	if err == io.EOF {
-		return io.ErrUnexpectedEOF
+		return nil, io.ErrUnexpectedEOF
 	}
+
+	return buf, err
 }
+/*
 
 func readdebug(a ...interface{}) {
 	if true {

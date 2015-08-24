@@ -159,6 +159,14 @@ var PCAPNG_INVALID_HEADER = errors.New("invalid block header type")
 var PCAPNG_CORRUPTED_FILE = errors.New("file corrupted")
 var PCAPNG_SKIPPING_NOT_SUPPORTED = errors.New("skipping not supported")
 
+func IsPcapngStream(data []byte) bool {
+	if len(data) < 4 {
+		return false
+	}
+
+	return data[0] == 0x0A && data[1] == 0x0D && data[2] == 0x0D && data[3] == 0x0A
+}
+
 type IPv4Address [4]uint8
 
 func (a IPv4Address) String() string {
