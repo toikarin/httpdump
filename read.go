@@ -2,13 +2,16 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
+	"go-libpcap"
 	"go-libpcapng"
 	"io"
+	"time"
 )
 
 type PacketListener interface {
-	NewPacket(fileHeader PcapFileHeader, ipacketHeader PcapPacketHeader, linkLayer, networkLayer, transportLayer interface{})
+	NewPacket(timestamp time.Time, linkLayer, networkLayer, transportLayer interface{})
 }
 
 func readStream(r io.Reader, packetListener PacketListener) error {
@@ -21,6 +24,8 @@ func readStream(r io.Reader, packetListener PacketListener) error {
 	r = io.MultiReader(bytes.NewReader(data), r)
 
 	if pcapng.IsPcapngStream(data) {
+		readdebug("pcapng format detected")
+
 		stream := pcapng.NewStream(r)
 
 		for {
@@ -29,334 +34,45 @@ func readStream(r io.Reader, packetListener PacketListener) error {
 				return err
 			}
 
-			fmt.Println(block)
-
 			switch block.(type) {
-			case *pcapng.InterfaceStatisticsBlock:
+			case *pcapng.EnhancedPacketBlock:
+				epb := block.(*pcapng.EnhancedPacketBlock)
+
+				linkLayer, networkLayer, transportLayer, err := readLayerPacket(uint32(epb.Interface.LinkType), stream.ByteOrder(), epb.PacketData)
+				if err != nil {
+					return err
+				}
+
+				packetListener.NewPacket(epb.Timestamp, linkLayer, networkLayer, transportLayer)
 			}
+		}
+	} else if pcap.IsPcapStream(data) {
+		readdebug("pcap format detected")
+
+		stream, fileHeader, err := pcap.NewStream(r)
+		if err != nil {
+			return err
+		}
+
+		for {
+			packetHeader, data, err := stream.NextPacket()
+			if err != nil {
+				return err
+			}
+
+			linkLayer, networkLayer, transportLayer, err := readLayerPacket(fileHeader.Network(), fileHeader.ByteOrder, data)
+			if err != nil {
+				return err
+			}
+
+			packetListener.NewPacket(packetHeader.Timestamp(), linkLayer, networkLayer, transportLayer)
 		}
 	}
 
 	return nil
 }
 
-func IsPcapStream(data []byte) bool {
-	return (data[0] == 0xa1 && data[1] == 0xb2 && data[2] == 0xc3 && data[3] == 0xd4) ||
-		(data[3] == 0xa1 && data[2] == 0xb2 && data[1] == 0xc3 && data[0] == 0xd4)
-}
-
-/*
-func NewPcapngBlockHeader(data []byte) (*PcapngBlockHeader, error) {
-	if len(data) != 8 {
-		return nil, errors.New("FIXME")
-	}
-
-	return &PcapngBlockHeader{data}
-}
-*/
-
-/*
-type ParsedSectionHeader type {
-	header *BlockHeader
-	body *BlockBody
-	opts []BlockOptions
-}
-*/
-
-/*
-func readPcapngStream(r io.Reader) error {
-	//
-	// initial section header block read
-	//
-
-	//
-	// Read block header
-	//
-	headerBuf, err := read(r, 24)
-
-	switch err {
-	case io.EOF:
-		return nil
-	case io.ErrUnexpectedEOF:
-		//
-		// on first try it's ok if we don't have enough data (assume this is not pcapng stream).
-		//
-		return nil
-	}
-
-	blockHeader, err := NewPcapngBlockHeader(headerBuf)
-	if err != nil {
-		return err
-	}
-
-	//
-	// Check block type matches to section header
-	//
-	if blockHeader.BlockType() != PCAP_NG_BLOCK_TYPE_SECTION_HEADER {
-		return nil
-	}
-
-	//
-	// Parse body
-	//
-	sectionHeaderBody, err := NewPcapngSectionHeader(headerBuf[8:])
-	if err != nil {
-		return err
-	}
-
-	//
-	// Read options
-	//
-	optsLen := header.TotalLength() - 28 // 12 + 16
-	opts, err = readOptions(r, header.ByteOrder, optsLen)
-	if err != nil {
-		return err
-	}
-
-	//
-	// Read last block total length
-	//
-	_, err = readExactly(r, 4)
-	if err != nil {
-		return err
-	}
-
-	section := SectionHeader{blockHeader, sectionHeaderBody, opts}
-
-	//
-	// handle rest of the blocks
-	//
-	for {
-		//
-		// Read block header
-		//
-		headerBuf, err := read(r, 8)
-		if err != nil {
-			if err == io.EOF {
-				return nil
-			}
-
-			return err
-		}
-
-		blockHeader, err := NewPcapngBlockHeader(headerBuf)
-		if err != nil {
-			return err
-		}
-
-		switch blockHeader.BlockType() {
-		}
-	}
-}
-
-/*
-func readStream(r io.Reader, packetListener PacketListener) error {
-	pcapNgFileHeader, opts, err := readPcapngFileHeader(r)
-
-	if err != nil {
-		if err == io.EOF {
-			return nil
-		}
-
-		return err
-	}
-
-	fmt.Println(pcapNgFileHeader)
-	fmt.Println(String(opts, pcapNgFileHeader.BlockType(), pcapNgFileHeader.ByteOrder))
-
-	for {
-		buf, err := read(r, 8)
-		if err != nil {
-			if err == io.EOF {
-				fmt.Println("EOF")
-				return nil
-			}
-
-			return err
-		}
-
-		blockType := pcapNgFileHeader.ByteOrder.Uint32(buf[0:4])
-		blockTotalLen := pcapNgFileHeader.ByteOrder.Uint32(buf[4:8])
-		restBlockData, err := read(r, alignUint32(blockTotalLen - 8))
-		block := PcapngBlock{pcapNgFileHeader.ByteOrder, append(buf, restBlockData...)}
-
-		switch blockType {
-		case PCAP_NG_BLOCK_TYPE_EXPERIMENTAL_PROCESS_INFORMATION:
-			procInfo, opts, err := NewPcapngProcessInformation(&block)
-			if false {
-				fmt.Println("processInfo")
-				fmt.Println(procInfo)
-				fmt.Println(String(opts, block.BlockType(), pcapNgFileHeader.ByteOrder))
-				fmt.Println(err)
-			}
-		case PCAP_NG_BLOCK_TYPE_INTERFACE_DESC:
-			if false {
-				ifdesc, opts, err := NewPcapngInterfaceDescription(&block)
-				fmt.Println("if")
-				fmt.Println(ifdesc)
-				fmt.Println(String(opts, block.BlockType(), pcapNgFileHeader.ByteOrder))
-				fmt.Println(err)
-			}
-		case PCAP_NG_BLOCK_TYPE_ENHANCED_PACKET:
-			if false {
-				epacket, opts, err := NewPcapngEnhancedPacket(&block)
-				fmt.Println("epacket")
-				fmt.Println(epacket)
-				fmt.Println(String(opts, block.BlockType(), pcapNgFileHeader.ByteOrder))
-				fmt.Println(err)
-		}
-		case PCAP_NG_BLOCK_TYPE_SECTION_HEADER:
-			fmt.Println("NEW SEC")
-		default:
-			fmt.Println(binary.LittleEndian.Uint32(buf[0:4]))
-			fmt.Println(binary.BigEndian.Uint32(buf[0:4]))
-			fmt.Println("not handled", blockType)
-		}
-	}
-
-	if pcapNgFileHeader != nil {
-		return errors.New("pcap-ng not supported")
-	}
-
-	if err != nil {
-		if err == io.EOF {
-			return nil
-		}
-
-		return err
-	}
-
-	return nil
-}
-*/
-
-/*
-func readPacket(r io.Reader, pcapFileHeader *PcapFileHeader) (pcapPacketHeader *PcapPacketHeader, linkLayer, networkLayer, transportLayer interface{}, err error) {
-	//
-	// Read pcap packet header
-	//
-	pcapPacketHeader, err = readPcapPacketHeader(r, pcapFileHeader.ByteOrder)
-	if err != nil {
-		return
-	}
-
-	//
-	// Read rest of the packet
-	//
-	packetData, err := read(r, pcapPacketHeader.IncludeLength())
-	if err != nil {
-		return
-	}
-
-	//
-	// Read packet
-	//
-	linkLayer, networkLayer, transportLayer, err = readLayerPacket(pcapFileHeader, packetData)
-	return
-}
-
-func readPcapFileHeader(r io.Reader) (header *PcapFileHeader, err error) {
-	buf, err := read(r, PCAP_FILE_HEADER_LENGTH)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewPcapFileHeader(buf)
-}
-
-/*
-func readBlock(r io.Reader, bo binary.ByteOrder) error {
-	/*
-	buf, err := read(r, 8)
-	if err != nil {
-		return err
-	}
-
-	blockType := bo.Uint32(buf[0:4])
-	blockTotalLen := bo.Uint32(buf[4:8])
-
-	blockData, err := read(r, blockTotalLen - 8)
-	if err != nil {
-		return err
-	}
-
-	var blockBodyLen uint32
-	switch blockType {
-	case PCAP_NG_BLOCK_TYPE_INTERFACE_DESC:
-		blockBodyLen = PCAP_NG_BLOCK_BODY_LEN_INTERFACE_DESC
-	case PCAP_NG_BLOCK_TYPE_SECTION_HEADER:
-		blockBodyLen = PCAP_NG_BLOCK_BODY_LEN_SECTION_HEADER
-	case PCAP_NG_BLOCK_TYPE_SIMPLE_PACKET:
-		blockBodyLen = blockTotalLen - 12
-	case PCAP_NG_BLOCK_TYPE_PACKET:
-		capturedLen := bo.Uint32(blockData[16:20])
-		capturedLenFull := uint32(math.Ceil(float64(capturedLen)/4)) * 4
-		blockBodyLen = blockTotalLen - 12 - capturedLenFull
-	}
-
-	blockBodyData := blockData[:blockBodyLen]
-
-	optsLen := blockTotalLen - 12 - blockBodyLen
-	if optsLen > 0 {
-		opts, err := PcapNgParseOptions(bo, blockData[12 + blockBodyLen:12 + blockBodyLen + optsLen])
-	}
-*/
-
-/*
-	return nil
-}
-*/
-
-/*
-func readPcapngSectionHeader(r io.Reader) (header *PcapngSectionHeader, opts []PcapNgOption, err error) {
-	buf, err := read(r, PCAP_NG_FILE_HEADER_LENGTH)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	header, err = NewPcapngSectionHeader(buf)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	//
-	// Read options
-	//
-	optsLen := header.TotalLength() - 12
-	if optsLen > 0 {
-		buf, err := read(r, optsLen)
-		if err != nil {
-			if err == io.EOF {
-				return nil, nil, io.ErrUnexpectedEOF
-			}
-
-			return nil, nil, err
-		}
-
-		opts, err = PcapNgParseOptions(header.ByteOrder, buf)
-	}
-
-	//
-	buf, err = read(r, PCAP_NG_BLOCK_TOTAL_LENGTH_BYTES)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return
-}
-
-func readPcapPacketHeader(r io.Reader, bo binary.ByteOrder) (*PcapPacketHeader, error) {
-	buf, err := read(r, PCAP_PACKET_HEADER_LENGTH)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewPcapPacketHeader(buf, bo)
-}
-*/
-
-/*
-func readLayerPacket(pcapFileHeader *PcapFileHeader, packetData []byte) (linkLayer, networkLayer, transportLayer interface{}, err error) {
+func readLayerPacket(network uint32, byteOrder binary.ByteOrder, packetData []byte) (linkLayer, networkLayer, transportLayer interface{}, err error) {
 	var protocol uint8
 	var payload []byte
 	var linkFrame interface{}
@@ -366,8 +82,8 @@ func readLayerPacket(pcapFileHeader *PcapFileHeader, packetData []byte) (linkLay
 	//
 	// Read layer frame
 	//
-	switch pcapFileHeader.Network() {
-	case PCAP_LINKTYPE_ETHERNET:
+	switch network {
+	case pcap.LINKTYPE_ETHERNET:
 		ethernetFrame, err := NewEthernetFrame(packetData)
 		if err != nil {
 			return nil, nil, nil, err
@@ -378,8 +94,8 @@ func readLayerPacket(pcapFileHeader *PcapFileHeader, packetData []byte) (linkLay
 
 		etherType = ethernetFrame.Header.Type()
 		payload = ethernetFrame.Payload
-	case PCAP_LINKTYPE_NULL:
-		nullFrame, err := NewNullFrame(packetData, pcapFileHeader.ByteOrder)
+	case pcap.LINKTYPE_NULL:
+		nullFrame, err := NewNullFrame(packetData, byteOrder)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -469,7 +185,6 @@ func readLayerPacket(pcapFileHeader *PcapFileHeader, packetData []byte) (linkLay
 	}
 }
 
-*/
 func read(r io.Reader, n uint32) (data []byte, err error) {
 	buf := make([]byte, n)
 
@@ -488,11 +203,9 @@ func readExactly(r io.Reader, n uint32) (data []byte, err error) {
 
 	return buf, err
 }
-/*
 
 func readdebug(a ...interface{}) {
 	if true {
 		debug("debug-read:", a...)
 	}
 }
-*/

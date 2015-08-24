@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"go-libpcap"
 	"go-libpcapng"
 	"io"
 	"os"
@@ -139,7 +140,7 @@ func main() {
 		switch err {
 		case io.EOF:
 			// OK
-		case PCAP_INVALID_FILETYPE:
+		case pcap.INVALID_FILETYPE:
 			fallthrough
 		case pcapng.PCAPNG_INVALID_HEADER:
 			fmt.Println("error: not pcap/pcap-ng file.")

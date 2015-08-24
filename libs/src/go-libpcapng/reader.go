@@ -112,7 +112,7 @@ func (s *Stream) SkipSection() error {
 // internal funcs
 //
 
-func (s *Stream) byteOrder() binary.ByteOrder {
+func (s *Stream) ByteOrder() binary.ByteOrder {
 	if s.sectionHeader == nil {
 		panic("section header is nil")
 	}

@@ -7,6 +7,7 @@ import (
 
 type EnhancedPacketBlock struct {
 	totalLength    uint32
+	Interface      *InterfaceDescriptionBlock
 	InterfaceId    uint32
 	Timestamp      time.Time
 	CapturedLength uint32
@@ -224,6 +225,7 @@ func (s *Stream) newEnhancedPacketBlock(body []byte, totalLength uint32) (*Enhan
 	//
 	return &EnhancedPacketBlock{
 		totalLength:    totalLength,
+		Interface:    ifdb,
 		InterfaceId:    interfaceId,
 		Timestamp:      timestamp(tsHigh, tsLow, ifdb),
 		CapturedLength: capLen,
