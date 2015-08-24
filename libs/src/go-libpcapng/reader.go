@@ -72,6 +72,8 @@ func (s *Stream) NextBlock() (Block, error) {
 	switch blockType {
 	case BLOCK_TYPE_PACKET:
 		return s.newPacketBlock(bodyData, totalLength)
+	case BLOCK_TYPE_SIMPLE_PACKET:
+		return s.newSimplePacketBlock(bodyData, totalLength)
 	case BLOCK_TYPE_ENHANCED_PACKET:
 		return s.newEnhancedPacketBlock(bodyData, totalLength)
 	case BLOCK_TYPE_INTERFACE_DESC:
@@ -90,10 +92,9 @@ func (s *Stream) NextBlock() (Block, error) {
 		// this is handled before the switch case
 		//
 		panic("should not be here")
+	default:
+		return s.newUnsupportedBlock(bodyData, blockType, totalLength)
 	}
-
-	panic("unknown" + fmt.Sprintf("%d", blockType))
-	return nil, nil
 }
 
 func (s *Stream) SkipSection() error {
