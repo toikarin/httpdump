@@ -137,6 +137,9 @@ func readLayerPacket(pcapFileHeader *PcapFileHeader, packetData []byte) (linkLay
 				}
 			}
 		}
+	default:
+		readdebug(fmt.Sprintf("Unsupported network type %d.", network))
+		return nil, nil, nil, nil
 	}
 
 	//
