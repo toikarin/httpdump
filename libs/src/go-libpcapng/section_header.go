@@ -82,13 +82,16 @@ func (shb SectionHeaderBlock) OptionUserApplication() string {
 }
 
 func (s *Stream) readSectionHeaderBlock() (header *SectionHeaderBlock, err error) {
+	//
+	// Read block type and length
+	//
 	data, err := s.read(8)
 	if err != nil {
 		return nil, err
 	}
 
 	//
-	// read block-type
+	// check block type
 	//
 	if data[0] != 0x0A || data[1] != 0x0D || data[2] != 0x0D || data[3] != 0x0A {
 		return nil, PCAPNG_INVALID_HEADER
@@ -98,7 +101,10 @@ func (s *Stream) readSectionHeaderBlock() (header *SectionHeaderBlock, err error
 }
 
 func (s *Stream) readSectionHeaderBlockBody(headerData []byte) (header *SectionHeaderBlock, err error) {
-	bodyData, err := s.read(24 - 8)
+	//
+	// read byte-order magic, version and section length
+	//
+	bodyData, err := s.read(16)
 	if err != nil {
 		return nil, err
 	}
@@ -117,11 +123,18 @@ func (s *Stream) readSectionHeaderBlockBody(headerData []byte) (header *SectionH
 	}
 
 	//
+	// read other fields
+	//
+	versionMajor := byteOrder.Uint16(bodyData[4:6])
+	versionMinor := byteOrder.Uint16(bodyData[6:8])
+	sectionLength := int64(byteOrder.Uint64(bodyData[8:16]))
+
+	//
 	// Read options
 	//
 	totalLength := byteOrder.Uint32(headerData[4:8])
 	optsLen := totalLength - 28
-	rawOpts, err := s.readOptions(optsLen)
+	rawOpts, err := s.readOptions(optsLen, byteOrder)
 	if err != nil {
 		return nil, err
 	}
@@ -142,9 +155,9 @@ func (s *Stream) readSectionHeaderBlockBody(headerData []byte) (header *SectionH
 	retval := &SectionHeaderBlock{
 		totalLength:   totalLength,
 		ByteOrder:     byteOrder,
-		VersionMajor:  byteOrder.Uint16(bodyData[4:6]),
-		VersionMinor:  byteOrder.Uint16(bodyData[6:8]),
-		SectionLength: int64(byteOrder.Uint64(bodyData[8:16])),
+		VersionMajor:  versionMajor,
+		VersionMinor:  versionMinor,
+		SectionLength: sectionLength,
 		RawOptions:    rawOpts,
 		Options:       opts,
 	}

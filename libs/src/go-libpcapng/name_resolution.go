@@ -17,7 +17,7 @@ type Record struct {
 type IPv4Address [4]uint8
 type IPv6Address [8]uint16
 
-func NewIPv6Address(byteOrder binary.ByteOrder, data []byte) IPv6Address {
+func newIPv6Address(byteOrder binary.ByteOrder, data []byte) IPv6Address {
 	return IPv6Address{
 		byteOrder.Uint16(data[0:2]),
 		byteOrder.Uint16(data[2:4]),
@@ -129,7 +129,7 @@ func (s *Stream) newNameResolutionBlock(body []byte, totalLength uint32) (*NameR
 				return nil, io.ErrUnexpectedEOF
 			}
 
-			addr := NewIPv6Address(byteOrder, recordValue[:16])
+			addr := newIPv6Address(byteOrder, recordValue[:16])
 
 			ipv6records = append(ipv6records, IPv6Record{addr, string(recordValue[16 : recordLength-1])})
 		default:
@@ -187,7 +187,7 @@ func (s *Stream) parseNameResolutionOptions(rawOpts *RawOptions) (*NameResolutio
 			opts.IPv4Address = &ipv4addr
 		case OPTION_DNSIP6ADDR:
 			val := va[0]
-			addr := NewIPv6Address(s.sectionHeader.ByteOrder, val)
+			addr := newIPv6Address(s.sectionHeader.ByteOrder, val)
 			opts.IPv6Address = &addr
 
 		default:

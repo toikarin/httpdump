@@ -2,8 +2,6 @@ package pcapng
 
 import (
 	"errors"
-	"math"
-	"time"
 )
 
 //
@@ -29,7 +27,7 @@ import (
 // | Byte Order Magic   | 4 bytes                             |
 // | Major Version      | 2 bytes                             |
 // | Minor Version      | 2 bytes                             |
-// | Section Length     | 4 bytes                             |
+// | Section Length     | 8 bytes                             |
 // | Options            | variable length, aligned to 4 bytes |
 // +--------------------+-------------------------------------+
 //
@@ -133,13 +131,6 @@ import (
 //
 
 const (
-	SECTION_HEADER_MIN_LENGTH     = 28
-	BLOCK_TOTAL_LENGTH_BYTES      = 4
-	BLOCK_LEN_INTERFACE_DESC      = 14
-	BLOCK_BODY_LEN_SECTION_HEADER = 16
-)
-
-const (
 	BLOCK_TYPE_SECTION_HEADER  = 0x0A0D0D0A
 	BLOCK_TYPE_INTERFACE_DESC  = 0x00000001
 	BLOCK_TYPE_PACKET          = 0x00000002 // obsolete
@@ -165,53 +156,3 @@ type blockHeader struct {
 var PCAPNG_INVALID_HEADER = errors.New("invalid block header type")
 var PCAPNG_CORRUPTED_FILE = errors.New("file corrupted")
 var PCAPNG_SKIPPING_NOT_SUPPORTED = errors.New("skipping not supported")
-
-func alignUint16(i uint16) uint32 {
-	return uint32(math.Ceil(float64(i)/4)) * 4
-}
-
-func alignUint32(i uint32) uint32 {
-	return uint32(math.Ceil(float64(i)/4)) * 4
-}
-
-func StringOptionValue(value []byte) string {
-	if value == nil {
-		return ""
-	}
-
-	//
-	// last nil-byte needs to be removed
-	//
-	l := len(value)
-
-	if l == 0 {
-		return ""
-	}
-
-	//
-	// Trim nil-byte, apple seems to add it
-	//
-	if value[l-1] == 0 {
-		value = value[:l-1]
-	}
-
-	return string(value)
-}
-
-func timestamp(high, low uint32, ifdb *InterfaceDescriptionBlock) time.Time {
-	ts := int64(high)<<32 | int64(low)
-
-	var divisor int64
-
-	tsResol := ifdb.OptionTimestampResolution()
-	if tsResol.IsPow10() {
-		divisor = int64(math.Pow10(int(tsResol.Value())))
-	} else {
-		divisor = int64(math.Pow(2, float64(tsResol.Value())))
-	}
-
-	seconds := ts / divisor
-	microseconds := ts % divisor
-
-	return time.Unix(seconds, microseconds*1000)
-}

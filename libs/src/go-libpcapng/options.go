@@ -86,7 +86,7 @@ type OptionValue []byte
 type RawOptions map[OptionCode][]OptionValue
 
 func (s *Stream) parseOptions(data []byte) (*RawOptions, error) {
-	return parseOptions(data, s.sectionHeader.ByteOrder)
+	return parseOptions(data, s.byteOrder())
 }
 
 func parseOptions(data []byte, byteOrder binary.ByteOrder) (*RawOptions, error) {

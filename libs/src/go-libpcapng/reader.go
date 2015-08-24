@@ -1,6 +1,7 @@
 package pcapng
 
 import (
+	"encoding/binary"
 	"io"
 )
 
@@ -70,23 +71,23 @@ func (s *Stream) NextBlock() (Block, error) {
 	}
 
 	switch blockType {
-	case BLOCK_TYPE_PACKET:
-		return s.newPacketBlock(bodyData, totalLength)
-	case BLOCK_TYPE_SIMPLE_PACKET:
-		return s.newSimplePacketBlock(bodyData, totalLength)
-	case BLOCK_TYPE_ENHANCED_PACKET:
-		return s.newEnhancedPacketBlock(bodyData, totalLength)
 	case BLOCK_TYPE_INTERFACE_DESC:
 		ifdb, err := s.newInterfaceDescriptionBlock(bodyData, totalLength)
 		s.interfaces = append(s.interfaces, ifdb)
 
 		return ifdb, err
-	case BLOCK_TYPE_EXPERIMENTAL_PROCESS_INFORMATION:
-		return s.newProcessInformationBlock(bodyData, totalLength)
-	case BLOCK_TYPE_INTERFACE_STATS:
-		return s.newInterfaceStatisticsBlock(bodyData, totalLength)
+	case BLOCK_TYPE_PACKET:
+		return s.newPacketBlock(bodyData, totalLength)
+	case BLOCK_TYPE_SIMPLE_PACKET:
+		return s.newSimplePacketBlock(bodyData, totalLength)
 	case BLOCK_TYPE_NAME_RESOLUTION:
 		return s.newNameResolutionBlock(bodyData, totalLength)
+	case BLOCK_TYPE_INTERFACE_STATS:
+		return s.newInterfaceStatisticsBlock(bodyData, totalLength)
+	case BLOCK_TYPE_ENHANCED_PACKET:
+		return s.newEnhancedPacketBlock(bodyData, totalLength)
+	case BLOCK_TYPE_EXPERIMENTAL_PROCESS_INFORMATION:
+		return s.newProcessInformationBlock(bodyData, totalLength)
 	case BLOCK_TYPE_SECTION_HEADER:
 		//
 		// this is handled before the switch case
@@ -111,7 +112,15 @@ func (s *Stream) SkipSection() error {
 // internal funcs
 //
 
-func (s *Stream) readOptions(optsLen uint32) (*RawOptions, error) {
+func (s *Stream) byteOrder() binary.ByteOrder {
+	if s.sectionHeader == nil {
+		panic("section header is nil")
+	}
+
+	return s.sectionHeader.ByteOrder
+}
+
+func (s *Stream) readOptions(optsLen uint32, byteOrder binary.ByteOrder) (*RawOptions, error) {
 	optsLen = alignUint32(optsLen)
 
 	if optsLen > 0 {
@@ -124,7 +133,7 @@ func (s *Stream) readOptions(optsLen uint32) (*RawOptions, error) {
 			return nil, err
 		}
 
-		return s.parseOptions(buf)
+		return parseOptions(buf, byteOrder)
 	}
 
 	return nil, nil

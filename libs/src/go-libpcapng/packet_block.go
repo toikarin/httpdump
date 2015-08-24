@@ -2,11 +2,6 @@ package pcapng
 
 import (
 	"errors"
-	"fmt"
-)
-
-const (
-	PCAPNG_BLOCK_BODY_LEN_PACKET_BLOCK = 20
 )
 
 type PacketBlock struct {
@@ -44,10 +39,6 @@ func (epb PacketBlock) HasOptions() bool {
 }
 
 func (s *Stream) newPacketBlock(body []byte, totalLength uint32) (*PacketBlock, error) {
-	if len(body) < PCAPNG_BLOCK_BODY_LEN_PACKET_BLOCK {
-		return nil, errors.New(fmt.Sprintf("body requires at least %d bytes of data.", PCAPNG_BLOCK_BODY_LEN_PACKET_BLOCK))
-	}
-
 	byteOrder := s.sectionHeader.ByteOrder
 
 	capLen := byteOrder.Uint32(body[12:16])
