@@ -59,8 +59,8 @@ type InterfaceDescriptionOptions struct {
 
 	Name                *string
 	Description         *string
-	IPv4Address         []byte
-	IPv6Address         []byte
+	IPv4Address         *IPv4Address
+	IPv6Address         *IPv6Address
 	MacAddress          []byte
 	EUIAddress          []byte
 	Speed               *uint64
@@ -143,11 +143,11 @@ func (s *Stream) parseInterfaceDescriptionOptions(rawOpts *RawOptions) (*Interfa
 			v := StringOptionValue(va[0])
 			opts.Description = &v
 		case OPTION_IF_IPV4ADDR:
-			v := va[0]
-			opts.IPv4Address = v
+			v := newIPv4Address(va[0])
+			opts.IPv4Address = &v
 		case OPTION_IF_IPV6ADDR:
-			v := va[0]
-			opts.IPv6Address = v
+			addr := newIPv6Address(s.sectionHeader.ByteOrder, va[0])
+			opts.IPv6Address = &addr
 		case OPTION_IF_MACADDR:
 			v := va[0]
 			opts.MacAddress = v

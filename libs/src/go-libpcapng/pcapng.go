@@ -1,7 +1,9 @@
 package pcapng
 
 import (
+	"encoding/binary"
 	"errors"
+	"fmt"
 )
 
 //
@@ -156,3 +158,45 @@ type blockHeader struct {
 var PCAPNG_INVALID_HEADER = errors.New("invalid block header type")
 var PCAPNG_CORRUPTED_FILE = errors.New("file corrupted")
 var PCAPNG_SKIPPING_NOT_SUPPORTED = errors.New("skipping not supported")
+
+type IPv4Address [4]uint8
+
+func (a IPv4Address) String() string {
+	return fmt.Sprintf("%d.%d.%d.%d", a[0], a[1], a[2], a[3])
+}
+
+func newIPv4Address(bytes []byte) IPv4Address {
+	var addr [4]byte
+	copy(addr[:], bytes)
+
+	return addr
+}
+
+type IPv6Address [8]uint16
+
+func (a IPv6Address) String() string {
+	s := ""
+
+	for i, part := range a {
+		if i > 0 {
+			s += ":"
+		}
+
+		s += fmt.Sprintf("%x", part)
+	}
+
+	return s
+}
+
+func newIPv6Address(byteOrder binary.ByteOrder, data []byte) IPv6Address {
+	return IPv6Address{
+		byteOrder.Uint16(data[0:2]),
+		byteOrder.Uint16(data[2:4]),
+		byteOrder.Uint16(data[4:6]),
+		byteOrder.Uint16(data[6:8]),
+		byteOrder.Uint16(data[8:10]),
+		byteOrder.Uint16(data[10:12]),
+		byteOrder.Uint16(data[12:14]),
+		byteOrder.Uint16(data[14:16]),
+	}
+}

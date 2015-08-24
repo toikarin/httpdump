@@ -1,44 +1,12 @@
 package pcapng
 
 import (
-	"encoding/binary"
 	"io"
 )
 
 const (
 	PCAPNG_RECORD_CODE_END_OF_RECORD = 0
 )
-
-type Record struct {
-	Type  uint16
-	Value []byte
-}
-
-type IPv4Address [4]uint8
-type IPv6Address [8]uint16
-
-func newIPv6Address(byteOrder binary.ByteOrder, data []byte) IPv6Address {
-	return IPv6Address{
-		byteOrder.Uint16(data[0:2]),
-		byteOrder.Uint16(data[2:4]),
-		byteOrder.Uint16(data[4:6]),
-		byteOrder.Uint16(data[6:8]),
-		byteOrder.Uint16(data[8:10]),
-		byteOrder.Uint16(data[10:12]),
-		byteOrder.Uint16(data[12:14]),
-		byteOrder.Uint16(data[14:16]),
-	}
-}
-
-type IPv4Record struct {
-	Address IPv4Address
-	Name    string
-}
-
-type IPv6Record struct {
-	Address IPv6Address
-	Name    string
-}
 
 type NameResolutionBlock struct {
 	totalLength uint32
@@ -47,16 +15,6 @@ type NameResolutionBlock struct {
 	IPv6Records []IPv6Record
 	RawOptions  *RawOptions
 	Options     *NameResolutionOptions
-}
-
-type NameResolutionOptions struct {
-	Comment *string
-
-	DnsName     *string
-	IPv4Address *IPv4Address
-	IPv6Address *IPv6Address
-
-	Unsupported RawOptions
 }
 
 func (NameResolutionBlock) BlockType() uint32 {
@@ -77,6 +35,26 @@ func (nrb NameResolutionBlock) OptionComment() string {
 	}
 
 	return *nrb.Options.Comment
+}
+
+type IPv4Record struct {
+	Address IPv4Address
+	Name    string
+}
+
+type IPv6Record struct {
+	Address IPv6Address
+	Name    string
+}
+
+type NameResolutionOptions struct {
+	Comment *string
+
+	DnsName     *string
+	IPv4Address *IPv4Address
+	IPv6Address *IPv6Address
+
+	Unsupported RawOptions
 }
 
 func (s *Stream) newNameResolutionBlock(body []byte, totalLength uint32) (*NameResolutionBlock, error) {
@@ -120,10 +98,7 @@ func (s *Stream) newNameResolutionBlock(body []byte, totalLength uint32) (*NameR
 				return nil, io.ErrUnexpectedEOF
 			}
 
-			var addr [4]byte
-			copy(addr[:], recordValue[:4])
-
-			ipv4records = append(ipv4records, IPv4Record{addr, string(recordValue[4 : recordLength-1])})
+			ipv4records = append(ipv4records, IPv4Record{newIPv4Address(recordValue[:4]), string(recordValue[4 : recordLength-1])})
 		case 2:
 			if recordLength < 16 {
 				return nil, io.ErrUnexpectedEOF
@@ -179,17 +154,12 @@ func (s *Stream) parseNameResolutionOptions(rawOpts *RawOptions) (*NameResolutio
 			val := StringOptionValue(va[0])
 			opts.DnsName = &val
 		case OPTION_DNSIP4ADDR:
-			val := va[0]
-			var addr [4]byte
-			copy(addr[:], val)
-			ipv4addr := IPv4Address(addr)
-
+			ipv4addr := newIPv4Address(va[0])
 			opts.IPv4Address = &ipv4addr
 		case OPTION_DNSIP6ADDR:
 			val := va[0]
 			addr := newIPv6Address(s.sectionHeader.ByteOrder, val)
 			opts.IPv6Address = &addr
-
 		default:
 			opts.Unsupported[k] = va
 		}

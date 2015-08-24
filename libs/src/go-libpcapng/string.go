@@ -2,9 +2,9 @@ package pcapng
 
 import (
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
-	"time"
 )
 
 //
@@ -12,11 +12,6 @@ import (
 //
 
 func (sh SectionHeaderBlock) String() string {
-	optsStr := "<nil>"
-	if sh.HasOptions() {
-		optsStr = sh.Options.String()
-	}
-
 	return fmt.Sprintf(`[SectionHeaderBlock:
   BlockType:     0x%08x
   TotalLength:   %d
@@ -25,7 +20,7 @@ func (sh SectionHeaderBlock) String() string {
   SectionLength: %d (skipping supported: %t)
   Options:       %s
 ]`, sh.BlockType(), sh.TotalLength(), sh.ByteOrder, sh.VersionMajor, sh.VersionMinor, sh.SectionLength,
-		sh.SupportsSkipping(), optsStr)
+		sh.SupportsSkipping(), optValStr(sh.Options))
 }
 
 func (o SectionHeaderOptions) String() string {
@@ -36,10 +31,10 @@ func (o SectionHeaderOptions) String() string {
     User Application: %s
     Unsupported:      %s
   ]`,
-		stringOptVal(o.Comment),
-		stringOptVal(o.Hardware),
-		stringOptVal(o.OS),
-		stringOptVal(o.UserApplication),
+		optValStr(o.Comment),
+		optValStr(o.Hardware),
+		optValStr(o.OS),
+		optValStr(o.UserApplication),
 		unsupportedOpts(o.Unsupported))
 }
 
@@ -48,11 +43,6 @@ func (o SectionHeaderOptions) String() string {
 //
 
 func (epb EnhancedPacketBlock) String() string {
-	opts := "<nil>"
-	if epb.HasOptions() {
-		opts = epb.Options.String()
-	}
-
 	return fmt.Sprintf(`[EnhancedPacketBlock:
   BlockType:      0x%08x
   TotalLength:    %d
@@ -62,27 +52,18 @@ func (epb EnhancedPacketBlock) String() string {
   PacketLength:   %d
   PacketData:     <byte-array of len: %d>
   Options:        %s
-]`, epb.BlockType(), epb.TotalLength(), epb.InterfaceId, epb.Timestamp, epb.CapturedLength, epb.PacketLength, len(epb.PacketData), opts)
+]`, epb.BlockType(), epb.TotalLength(), epb.InterfaceId, epb.Timestamp, epb.CapturedLength, epb.PacketLength, len(epb.PacketData),
+		optValStr(epb.Options))
 }
 
 func (o EnhancedPacketOptions) String() string {
-	flagStr := "<nil>"
-	hashStr := "<nil>"
-
-	if o.Flags != nil {
-		flagStr = o.Flags.String()
-	}
-	if o.Hash != nil {
-		hashStr = o.Hash.String()
-	}
-
 	return fmt.Sprintf(`[EnhancedPacketOptions:
     Comment:      %s
     Flags:        %s
     Hash:         %s
     Drop count:   %s
     Unsupported:  %s
-  ]`, stringOptVal(o.Comment), flagStr, hashStr, uint64OptVal(o.DropCount), unsupportedOpts(o.Unsupported))
+  ]`, optValStr(o.Comment), optValStr(o.Flags), optValStr(o.Hash), optValStr(o.DropCount), unsupportedOpts(o.Unsupported))
 }
 
 func (f PacketFlags) String() string {
@@ -183,20 +164,13 @@ func (a PacketHashAlgorithm) String() string {
 //
 
 func (ifdb InterfaceDescriptionBlock) String() string {
-	var opts string
-	if ifdb.Options != nil {
-		opts = ifdb.Options.String()
-	} else {
-		opts = "<nil>"
-	}
-
 	return fmt.Sprintf(`[InterfaceDescriptionBlock:
   BlockType:   0x%08x
   TotalLength: %d
   LinkType:    %d
   SnapLength:  %d
   Options:     %s
-]`, ifdb.BlockType(), ifdb.TotalLength(), ifdb.LinkType, ifdb.SnapLength, opts)
+]`, ifdb.BlockType(), ifdb.TotalLength(), ifdb.LinkType, ifdb.SnapLength, optValStr(ifdb.Options))
 }
 
 func (o InterfaceDescriptionOptions) String() string {
@@ -204,8 +178,8 @@ func (o InterfaceDescriptionOptions) String() string {
     Comment:              %s
     Name:                 %s
     Description:          %s
-    IPv4 address:         FIXME %s
-    IPv6 address:         FIXME %s
+    IPv4 address:         %s
+    IPv6 address:         %s
     MAC address:          FIXME %s
     EUI address:          FIXME %s
     Speed:                %s
@@ -217,9 +191,9 @@ func (o InterfaceDescriptionOptions) String() string {
     Timestamp Offset:     %s
     Unsupported options:  %s
   ]`,
-		stringOptVal(o.Comment),
-		stringOptVal(o.Name),
-		stringOptVal(o.Description),
+		optValStr(o.Comment),
+		optValStr(o.Name),
+		optValStr(o.Description),
 		o.IPv4Address,
 		o.IPv6Address,
 		o.MacAddress,
@@ -228,9 +202,9 @@ func (o InterfaceDescriptionOptions) String() string {
 		timestampResolutionOptVal(o.TimestampResolution),
 		o.Timezone,
 		captureFilterOptVal(o.Filter),
-		stringOptVal(o.OS),
-		uint8OptVal(o.FCSLength),
-		uint64OptVal(o.TimestampOffset),
+		optValStr(o.OS),
+		optValStr(o.FCSLength),
+		optValStr(o.TimestampOffset),
 		unsupportedOpts(o.Unsupported))
 }
 
@@ -276,17 +250,12 @@ func captureFilterOptVal(cf *CaptureFilter) string {
 //
 
 func (pib ProcessInformationBlock) String() string {
-	opts := "<nil>"
-	if pib.HasOptions() {
-		opts = pib.Options.String()
-	}
-
 	return fmt.Sprintf(`[ProcessInformationBlock:
   BlockType:   0x%08x
   TotalLength: %d
   ProcessId:   %d
   Options:     %s
-]`, pib.BlockType(), pib.TotalLength(), pib.ProcessId, opts)
+]`, pib.BlockType(), pib.TotalLength(), pib.ProcessId, optValStr(pib.Options))
 }
 
 func (o ProcessInformationOptions) String() string {
@@ -295,8 +264,8 @@ func (o ProcessInformationOptions) String() string {
     Process Name: %s
     Unsupported:  %s
   ]`,
-		stringOptVal(o.Comment),
-		stringOptVal(o.ProcessName),
+		optValStr(o.Comment),
+		optValStr(o.ProcessName),
 		unsupportedOpts(o.Unsupported))
 }
 
@@ -305,11 +274,6 @@ func (o ProcessInformationOptions) String() string {
 //
 
 func (ifsb InterfaceStatisticsBlock) String() string {
-	opts := "<nil>"
-	if ifsb.HasOptions() {
-		opts = ifsb.Options.String()
-	}
-
 	return fmt.Sprintf(`[InterfaceStatisticsBlock:
   BlockType:      0x%08x
   TotalLength:    %d
@@ -317,7 +281,7 @@ func (ifsb InterfaceStatisticsBlock) String() string {
   Interface:      %s
   Timestamp:      %s
   Options:        %s
-]`, ifsb.BlockType(), ifsb.TotalLength(), ifsb.InterfaceId, ifsb.Interface.OptionName(), ifsb.Timestamp, opts)
+]`, ifsb.BlockType(), ifsb.TotalLength(), ifsb.InterfaceId, ifsb.Interface.OptionName(), ifsb.Timestamp, optValStr(ifsb.Options))
 }
 
 func (o InterfaceStatisticsOptions) String() string {
@@ -332,14 +296,14 @@ func (o InterfaceStatisticsOptions) String() string {
     UsrDeliv:     %s
     Unsupported:  %s
   ]`,
-		stringOptVal(o.Comment),
-		timeOptVal(o.StartTime),
-		timeOptVal(o.EndTime),
-		uint16OptVal(o.IfRecv),
-		uint16OptVal(o.IfDrop),
-		uint16OptVal(o.FilterAccept),
-		uint16OptVal(o.OsDrop),
-		uint16OptVal(o.UsrDeliv),
+		optValStr(o.Comment),
+		optValStr(o.StartTime),
+		optValStr(o.EndTime),
+		optValStr(o.IfRecv),
+		optValStr(o.IfDrop),
+		optValStr(o.FilterAccept),
+		optValStr(o.OsDrop),
+		optValStr(o.UsrDeliv),
 		unsupportedOpts(o.Unsupported))
 }
 
@@ -392,112 +356,74 @@ func (o NameResolutionOptions) String() string {
     IPv6 Address: %s
     Unsupported:  %s
   ]`,
-		stringOptVal(o.Comment),
-		stringOptVal(o.DnsName),
-		ipv4OptVal(o.IPv4Address),
-		ipv6OptVal(o.IPv6Address),
+		optValStr(o.Comment),
+		optValStr(o.DnsName),
+		optValStr(o.IPv4Address),
+		optValStr(o.IPv6Address),
 		unsupportedOpts(o.Unsupported))
-}
-
-func ipv4OptVal(a *IPv4Address) string {
-	if a == nil {
-		return "<nil>"
-	}
-
-	return fmt.Sprintf("%d.%d.%d.%d", a[0], a[1], a[2], a[3])
-}
-
-func ipv6OptVal(a *IPv6Address) string {
-	if a == nil {
-		return "<nil>"
-	}
-
-	s := ""
-
-	for i, part := range a {
-		if i > 0 {
-			s += ":"
-		}
-
-		s += fmt.Sprintf("%x", part)
-	}
-
-	return s
 }
 
 //
 // helpers
 //
 
-func uint8OptVal(u *uint8) string {
-	if u == nil {
+func optValStr(i interface{}) string {
+	if i == nil {
 		return "<nil>"
 	}
 
-	return strconv.FormatInt(int64(*u), 10)
-}
+	switch i.(type) {
+	case *string:
+		v := i.(*string)
+		if v == nil {
+			return "<nil>"
+		}
 
-func uint16OptVal(u *uint16) string {
-	if u == nil {
-		return "<nil>"
+		return *v
+	case *uint8:
+		v := i.(*uint8)
+		if v == nil {
+			return "<nil>"
+		}
+		return strconv.FormatInt(int64(*v), 10)
+	case *uint16:
+		v := i.(*uint16)
+		if v == nil {
+			return "<nil>"
+		}
+		return strconv.FormatInt(int64(*v), 10)
+	case *uint32:
+		v := i.(*uint32)
+		if v == nil {
+			return "<nil>"
+		}
+		return strconv.FormatInt(int64(*v), 10)
+	case *uint64:
+		v := i.(*uint64)
+		if v == nil {
+			return "<nil>"
+		}
+		return strconv.FormatInt(int64(*v), 10)
+	case fmt.Stringer:
+		if i == nil || reflect.ValueOf(i).IsNil() {
+			return "<nil>"
+		}
+
+		return i.(fmt.Stringer).String()
+	default:
+		panic("unknown value")
 	}
-
-	return strconv.FormatInt(int64(*u), 10)
-}
-
-func uint32OptVal(u *uint32) string {
-	if u == nil {
-		return "<nil>"
-	}
-
-	return strconv.FormatInt(int64(*u), 10)
-}
-
-func uint64OptVal(u *uint64) string {
-	if u == nil {
-		return "<nil>"
-	}
-
-	return strconv.FormatInt(int64(*u), 10)
-}
-
-func timeOptVal(t *time.Time) string {
-	if t == nil {
-		return "<nil>"
-	}
-
-	return t.String()
-}
-
-func stringOptVal(s *string) string {
-	if s == nil {
-		return "<nil>"
-	}
-
-	return *s
 }
 
 func (a IPv4Record) String() string {
-	return fmt.Sprintf("%d.%d.%d.%d = %s", a.Address[0], a.Address[1], a.Address[2], a.Address[3], a.Name)
+	return fmt.Sprintf("%s = %s", a.Address.String(), a.Name)
 }
 
 func (a IPv6Record) String() string {
-	s := ""
-
-	for i, part := range a.Address {
-		if i > 0 {
-			s += ":"
-		}
-
-		s += fmt.Sprintf("%x", part)
-	}
-
-	s += " = " + a.Name
-
-	return s
+	return fmt.Sprintf("%s = %s", a.Address.String(), a.Name)
 }
 
-func unsupportedOpts(o map[OptionCode][]OptionValue) string {
+func unsupportedOpts(o RawOptions) string {
 	if len(o) == 0 {
 		return "<nil>"
 	}
